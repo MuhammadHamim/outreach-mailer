@@ -74,10 +74,12 @@ export function Paper({ d, tpl, first }: { d: Data; tpl: string; first?: boolean
   }
   const contact: ReactNode[] = [
     b.location && <T id="basics.location" text={b.location} a={a0} lead={lead('location', 'location')} />, b.email && <T id="basics.email" text={b.email} a={a0} lead={lead('email', 'email')} />, b.phone && <T id="basics.phone" text={b.phone} a={a0} lead={lead('phone', 'phone')} />,
-    ...(b.links || []).map((l, i) => (l.url ? <a href={l.url} target="_blank" rel="noreferrer"><T id={`basics.link${i}`} text={l.label} a={a0} lead={lead(`link${i}`, 'link', l.url, l.label)} /></a> : <T id={`basics.link${i}`} text={l.label} a={a0} lead={lead(`link${i}`, 'link', '', l.label)} />)),
+    ...(b.links || []).map((l, i) => <T key={`link${i}`} id={`basics.link${i}`} text={l.label} a={a0} href={l.url} lead={lead(`link${i}`, 'link', l.url || '', l.label)} />),
   ].filter(Boolean)
   const pd = (b.personal || []).map((p, i) => ({ p, i })).filter(({ p }) => p.label || p.value)
-  const pdInline = (col: string) => pd.length ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 16px', margin: '0 0 6px', color: col }}>{pd.map(({ p, i }) => <span key={i}><T id={`basics.pd${i}.label`} text={p.label} a={a0} />{p.label && p.value ? ': ' : ''}<T id={`basics.pd${i}.value`} text={p.value} a={a0} /></span>)}</div> : null
+  const pdLead = (p: { label: string; value: string }) => p.label ? <span style={{ opacity: 0.75 }}>{p.label}{p.value ? ': ' : ''}</span> : undefined
+  const pdItem = ({ p, i }: { p: { label: string; value: string }; i: number }) => <T id={`basics.pd${i}.value`} text={p.value} a={a0} lead={pdLead(p)} />
+  const pdInline = (col: string) => pd.length ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 16px', margin: '0 0 6px', color: col }}>{pd.map((item) => <span key={item.i}>{pdItem(item)}</span>)}</div> : null
   const root: CSSProperties = { fontFamily: t.font, fontSize: t.size, color: '#1f2937', lineHeight: t.lh }
   const units: Unit[] = []
   let aside: ReactNode = null
@@ -88,7 +90,7 @@ export function Paper({ d, tpl, first }: { d: Data; tpl: string; first?: boolean
         {t.photo === 'side' && b.photo && <div style={{ display: 'flex', justifyContent: 'center', margin: '0 0 12px' }}><Photo src={b.photo} mm={t.psize ?? 38} shape={t.shape || 'circle'} /></div>}
         <h1 style={{ margin: '0 0 4px', fontSize: t.size * 2, fontWeight: 700, color: '#fff', lineHeight: 1.15 }}><T id="basics.name" text={b.name} a={a0} /></h1>
         <p style={{ margin: 0, color: '#cbd5e1' }}><T id="basics.headline" text={b.headline || ''} a={a0} /></p>
-        {t.photo === 'side' && pd.length > 0 && <div style={{ margin: '12px 0 0', display: 'grid', gap: 2, fontSize: t.size - 1, color: '#e2e8f0' }}>{pd.map(({ p, i }) => <div key={i}><span style={{ opacity: 0.75 }}><T id={`basics.pd${i}.label`} text={p.label} a={a0} />{p.label && p.value ? ': ' : ''}</span><T id={`basics.pd${i}.value`} text={p.value} a={a0} /></div>)}</div>}
+        {t.photo === 'side' && pd.length > 0 && <div style={{ margin: '12px 0 0', display: 'grid', gap: 2, fontSize: t.size - 1, color: '#e2e8f0' }}>{pd.map((item) => <div key={item.i}>{pdItem(item)}</div>)}</div>}
         <div style={{ margin: '12px 0', display: 'grid', gap: 4, fontSize: t.size - 1, wordBreak: 'break-word' }}>{contact.map((x, i) => <div key={i}>{x}</div>)}</div>
         {d.sections.map((s, si) => isSide(s) && parts(s, si, t, true).map((u) => <div key={u.id}>{u.node}</div>))}
       </>
@@ -114,7 +116,7 @@ export function Paper({ d, tpl, first }: { d: Data; tpl: string; first?: boolean
           <div style={{ flex: 1, minWidth: 0 }}>
             <h1 style={{ margin: '0 0 2px', fontSize: t.size * 2.4, fontWeight: 700, color: t.ink, lineHeight: 1.15 }}><T id="basics.name" text={b.name} a={a0} /></h1>
             {b.headline && <p style={{ margin: '0 0 8px', fontSize: t.size + 2, color: t.accent, fontWeight: 600 }}><T id="basics.headline" text={b.headline} a={a0} /></p>}
-            {pd.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '3px 18px', margin: '0 0 8px' }}>{pd.map(({ p, i }) => <div key={i}><span style={{ color: '#6b7280' }}><T id={`basics.pd${i}.label`} text={p.label} a={a0} />{p.label && p.value ? '：' : ''}</span><T id={`basics.pd${i}.value`} text={p.value} a={a0} /></div>)}</div>}
+            {pd.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '3px 18px', margin: '0 0 8px' }}>{pd.map((item) => <div key={item.i}>{pdItem(item)}</div>)}</div>}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 16px' }}>{contact.map((x, i) => <span key={i}>{x}</span>)}</div>
           </div>
           <Photo src={b.photo} mm={t.psize ?? 28} shape={t.shape || 'square'} ratio={1.35} />
@@ -130,7 +132,7 @@ export function Paper({ d, tpl, first }: { d: Data; tpl: string; first?: boolean
           <div style={{ flex: 1, minWidth: 0, textAlign: t.center ? 'center' : 'left' }}>
             <h1 style={{ margin: '0 0 4px', fontSize: t.size * 2.5, fontWeight: 700, letterSpacing: 1, color: t.ink, lineHeight: 1.15 }}><T id="basics.name" text={b.name} a={a0} /></h1>
             {b.headline && <p style={{ margin: '0 0 8px', fontSize: t.size + 2, color: '#4b5563' }}><T id="basics.headline" text={b.headline} a={a0} /></p>}
-            {photoTop && pd.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: t.center ? 'center' : 'flex-start', gap: '2px 16px', margin: '0 0 6px', color: '#4b5563' }}>{pd.map(({ p, i }) => <span key={i}><T id={`basics.pd${i}.label`} text={p.label} a={a0} />{p.label && p.value ? ': ' : ''}<T id={`basics.pd${i}.value`} text={p.value} a={a0} /></span>)}</div>}
+            {photoTop && pd.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: t.center ? 'center' : 'flex-start', gap: '2px 16px', margin: '0 0 6px', color: '#4b5563' }}>{pd.map((item) => <span key={item.i}>{pdItem(item)}</span>)}</div>}
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: t.center ? 'center' : 'flex-start', gap: '4px 16px' }}>{contact.map((x, i) => <span key={i}>{x}</span>)}</div>
           </div>
           {photoTop && <Photo src={b.photo} mm={t.psize ?? 30} shape={t.shape || 'rounded'} />}

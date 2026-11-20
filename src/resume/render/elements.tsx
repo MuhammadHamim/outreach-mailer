@@ -31,13 +31,13 @@ function Sel({ id, text, st, lead }: { id: string; text: string; st: CSSProperti
       {lead}
       <span ref={ref} contentEditable suppressContentEditableWarning spellCheck={false} style={{ outline: 'none' }} onPointerDown={(e) => e.stopPropagation()}
         onPaste={(e) => { e.preventDefault(); document.execCommand('insertText', false, e.clipboardData.getData('text/plain')) }}
-        onBlur={(e) => finish(e.currentTarget)} onKeyDown={(e) => { if (e.key === 'Escape' || (e.key === 'Enter' && !multi && !e.shiftKey)) { e.preventDefault(); e.currentTarget.blur() } }} />
+        onBlur={(e) => { if ((e.relatedTarget as HTMLElement | null)?.closest('[data-inline-toolbar]')) return; finish(e.currentTarget) }} onKeyDown={(e) => { if (e.key === 'Escape' || (e.key === 'Enter' && !multi && !e.shiftKey)) { e.preventDefault(); e.currentTarget.blur() } }} />
       <InlineBar target={el} />
     </span>
   )
 }
 
-export function T({ id, text, a, lead, bullet }: { id: string; text: string; a: string; lead?: ReactNode; bullet?: boolean }) {
+export function T({ id, text, a, lead, bullet, href }: { id: string; text: string; a: string; lead?: ReactNode; bullet?: boolean; href?: string }) {
   const c = useContext(Cx), f = c.fmt[id]
   if (f?.hidden) return null
   const st = fmtStyle(f), moved = f?.ax !== undefined || !!f?.dx || !!f?.dy
@@ -45,10 +45,12 @@ export function T({ id, text, a, lead, bullet }: { id: string; text: string; a: 
   const mark = bullet && moved ? <span aria-hidden style={{ position: 'absolute', left: -14, top: 0 }}>•</span> : null
   const content = <>{lead}{md(text, a)}</>
   const ghost = f?.ax !== undefined ? <span aria-hidden style={{ visibility: 'hidden' }}>{content}</span> : null
-  if (!c.on) return <>{ghost}<span data-eid={id} style={mark ? { ...st, position: st.position || 'relative' } : st}>{mark}{content}</span></>
+  const movedStyle = mark ? { ...st, position: st.position || 'relative' } : st
+  if (!c.on) return <>{ghost}{href ? <a data-eid={id} href={href} target="_blank" rel="noreferrer" style={movedStyle}>{mark}{content}</a> : <span data-eid={id} style={movedStyle}>{mark}{content}</span>}</>
   if (c.editing === id) return <>{ghost}<Sel id={id} text={text} st={st} lead={lead} /></>
   const { selected, only, props } = nodeProps(c, id, 'data-eid', f?.locked)
-  return <>{ghost}<span {...props} style={selected ? selStyle(st) : mark ? { ...st, position: st.position || 'relative' } : st}>{mark}{lead}{md(text || ' ', a)}{only && grips(c, id)}</span></>
+  const style = selected ? selStyle(st) : movedStyle
+  return <>{ghost}{href ? <a {...props} href={href} target="_blank" rel="noreferrer" style={style}>{mark}{lead}{md(text || ' ', a)}{only && grips(c, id)}</a> : <span {...props} style={style}>{mark}{lead}{md(text || ' ', a)}{only && grips(c, id)}</span>}</>
 }
 
 /** A list item whose bullet moves together with its text. */

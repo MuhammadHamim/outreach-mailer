@@ -117,7 +117,10 @@ function locate(d: Data, id: string): [any, string] | null {
   try {
     if (p[0] === 'basics') {
       const m = p[1].match(/^link(\d+)$/)
-      return m ? [d.basics.links![+m[1]], 'label'] : [d.basics, p[1]]
+      const pd = p[1].match(/^pd(\d+)$/)
+      if (m) return [d.basics.links![+m[1]], 'label']
+      if (pd && ['label', 'value'].includes(p[2])) return [d.basics.personal![+pd[1]], p[2]]
+      return [d.basics, p[1]]
     }
     const s = d.sections[+p[0].slice(1)]
     if (p[1] === 'title') return [s, 'title']

@@ -7,9 +7,9 @@ import { MD_SPLIT, SPAN_RE, flagStyle } from './inline'
 export const md = (s: string, a: string): ReactNode[] =>
   (s || '').split(MD_SPLIT).map((p, i) => {
     let m: RegExpMatchArray | null
-    if ((m = p.match(/^\*\*(.+)\*\*$/))) return <strong key={i}>{m[1]}</strong>
-    if ((m = p.match(SPAN_RE))) return <span key={i} style={flagStyle(m[1])}>{m[2]}</span>
-    if ((m = p.match(/^\[(.+)\]\((.+)\)$/))) return <a key={i} href={m[2]} target="_blank" rel="noreferrer" style={{ color: a, textDecoration: 'underline' }}>{m[1]}</a>
+    if ((m = p.match(/^\*\*(.+)\*\*$/))) return <strong key={i}>{md(m[1], a)}</strong>
+    if ((m = p.match(SPAN_RE))) return <span key={i} style={flagStyle(m[1])}>{md(m[2], a)}</span>
+    if ((m = p.match(/^\[(.+)\]\((.+)\)$/))) return <a key={i} href={m[2]} target="_blank" rel="noreferrer" style={{ color: a, textDecoration: 'underline' }}>{md(m[1], a)}</a>
     return p
   })
 

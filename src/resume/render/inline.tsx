@@ -27,12 +27,13 @@ export function toHtml(text: string): string {
   return (text || '').split(MD_SPLIT).map((p) => {
     let m: RegExpMatchArray | null
     if ((m = p.match(/^\*\*(.+)\*\*$/))) return `<b>${esc(m[1])}</b>`
-    if ((m = p.match(SPAN_RE))) return `<span style="${cssText(m[1])}">${esc(m[2])}</span>`
+    if ((m = p.match(SPAN_RE))) return `<span style="${cssText(m[1])}">${toHtml(m[2])}</span>`
+    if ((m = p.match(/^\[(.+)\]\((.+)\)$/))) return `<a href="${esc(m[2])}" target="_blank" rel="noreferrer">${toHtml(m[1])}</a>`
     return esc(p)
   }).join('').replace(/\n/g, '<br>')
 }
 
-type Run = { t: string; b?: boolean; i?: boolean; u?: boolean; c?: string; s?: number }
+type Run = { t: string; b?: boolean; i?: boolean; u?: boolean; c?: string; s?: number; href?: string }
 const hex = (rgb: string) => { const m = rgb.match(/\d+(\.\d+)?/g); return m ? '#' + m.slice(0, 3).map((x) => Math.round(+x).toString(16).padStart(2, '0')).join('') : rgb }
 
 /** Edited DOM -> markup. Styles are read relative to the element's own base style, so only real differences are stored. */
@@ -42,6 +43,8 @@ export function toMarkup(el: HTMLElement): string {
   const text = (t: string, p: HTMLElement) => {
     if (!t) return
     const cs = getComputedStyle(p), r: Run = { t: t.replace(/\u00a0/g, ' ') }
+    const link = p.closest('a[href]')
+    if (link instanceof HTMLAnchorElement) r.href = link.getAttribute('href') || undefined
     if (bold(cs.fontWeight) !== bold(base.fontWeight)) r.b = bold(cs.fontWeight)
     if ((cs.fontStyle === 'italic') !== (base.fontStyle === 'italic')) r.i = cs.fontStyle === 'italic'
     if (cs.textDecorationLine.includes('underline') !== base.textDecorationLine.includes('underline')) r.u = cs.textDecorationLine.includes('underline')
@@ -57,7 +60,7 @@ export function toMarkup(el: HTMLElement): string {
     n.childNodes.forEach(walk)
   }
   el.childNodes.forEach(walk)
-  const same = (a: Run, b: Run) => a.b === b.b && a.i === b.i && a.u === b.u && a.c === b.c && a.s === b.s
+  const same = (a: Run, b: Run) => a.b === b.b && a.i === b.i && a.u === b.u && a.c === b.c && a.s === b.s && a.href === b.href
   const merged: Run[] = []
   for (const r of runs.flatMap((x) => (x.t.includes('\n') ? x.t.split(/(\n)/).filter(Boolean).map((t) => (t === '\n' ? { t } : { ...x, t })) : [x]))) {
     const last = merged[merged.length - 1]
@@ -65,8 +68,10 @@ export function toMarkup(el: HTMLElement): string {
   }
   return merged.map((r) => {
     const fl = [r.b !== undefined && (r.b ? 'b' : 'b=0'), r.i !== undefined && (r.i ? 'i' : 'i=0'), r.u !== undefined && (r.u ? 'u' : 'u=0'), r.c && `c=${r.c}`, r.s && `s=${r.s}`].filter(Boolean) as string[]
-    if (!fl.length || r.t === '\n' || !r.t.trim()) return r.t
-    return fl.join(' ') === 'b' ? `**${r.t}**` : `{{${fl.join(' ')}|${r.t}}}`
+    if (r.t === '\n' || !r.t.trim()) return r.t
+    let out = fl.length ? (fl.join(' ') === 'b' ? `**${r.t}**` : `{{${fl.join(' ')}|${r.t}}}`) : r.t
+    if (r.href) out = `[${out}](${r.href})`
+    return out
   }).join('').replace(/\n+$/, '')
 }
 
@@ -76,16 +81,20 @@ const barBtn: CSSProperties = { height: 28, minWidth: 28, border: 0, borderRadiu
 /** Small floating toolbar above a text being edited: styles the SELECTED words only. */
 export function InlineBar({ target }: { target: HTMLElement | null }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null), [open, setOpen] = useState(false)
+  const [linkOpen, setLinkOpen] = useState(false), [url, setUrl] = useState('')
   const ref = useRef<HTMLDivElement>(null)
+  const rangeRef = useRef<Range | null>(null)
   useEffect(() => {
     const upd = () => {
       const s = getSelection(), el = target
+      if (linkOpen) return
       if (!s || !el || !s.rangeCount || s.isCollapsed || !el.contains(s.anchorNode) || !el.contains(s.focusNode)) { setPos(null); setOpen(false); return }
       const r = s.getRangeAt(0).getBoundingClientRect()
+      rangeRef.current = s.getRangeAt(0).cloneRange()
       setPos({ x: Math.max(8, Math.min(window.innerWidth - 330, r.left + r.width / 2 - 160)), y: Math.max(8, r.top - 44) })
     }
     document.addEventListener('selectionchange', upd); return () => document.removeEventListener('selectionchange', upd)
-  }, [target])
+  }, [target, linkOpen])
   useLayoutEffect(() => { document.execCommand('styleWithCSS', false, 'true') }, [])
   if (!pos) return null
   const run = (cmd: string, v?: string) => (e: React.MouseEvent) => { e.preventDefault(); document.execCommand(cmd, false, v) }
@@ -99,12 +108,26 @@ export function InlineBar({ target }: { target: HTMLElement | null }) {
     target.querySelectorAll<HTMLElement>('span[style*="xxx-large"]').forEach((sp) => { sp.style.fontSize = next + 'px' })
   }
   const stop = (e: React.SyntheticEvent) => e.stopPropagation()
+  const addLink = (e: React.MouseEvent) => {
+    e.preventDefault(); if (!target) return
+    let href = url.trim()
+    if (!/^[a-z][a-z\d+.-]*:/i.test(href)) href = `https://${href}`
+    if (!/^https?:\/\//i.test(href)) return
+    target.focus()
+    const s = getSelection()
+    if (rangeRef.current && target?.contains(rangeRef.current.commonAncestorContainer)) {
+      s?.removeAllRanges(); s?.addRange(rangeRef.current)
+    }
+    document.execCommand('createLink', false, href)
+    rangeRef.current = null; setLinkOpen(false); setUrl('')
+  }
   return createPortal(
-    <div ref={ref} onPointerDown={stop} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation() }} onClick={stop}
+    <div ref={ref} data-inline-toolbar="1" onPointerDown={stop} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation() }} onClick={stop}
       style={{ position: 'fixed', left: pos.x, top: pos.y, zIndex: 99999, background: '#2c2c2c', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.35)', padding: 4, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', maxWidth: 330 }}>
       <button style={{ ...barBtn, fontWeight: 800 }} title="Bold (Ctrl+B)" onMouseDown={run('bold')}>B</button>
       <button style={{ ...barBtn, fontStyle: 'italic' }} title="Italic (Ctrl+I)" onMouseDown={run('italic')}>I</button>
       <button style={{ ...barBtn, textDecoration: 'underline' }} title="Underline (Ctrl+U)" onMouseDown={run('underline')}>U</button>
+      <button style={barBtn} title="Add link" onMouseDown={(e) => { e.preventDefault(); setLinkOpen(!linkOpen); setOpen(false) }}>🔗</button>
       <span style={{ width: 1, height: 18, background: '#555', margin: '0 3px' }} />
       <button style={barBtn} title="Smaller" onMouseDown={size(-1)}>A−</button>
       <button style={barBtn} title="Larger" onMouseDown={size(1)}>A+</button>
@@ -115,5 +138,9 @@ export function InlineBar({ target }: { target: HTMLElement | null }) {
       {open && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: 6, width: '100%', borderTop: '1px solid #444', marginTop: 3 }}>
         {COLORS.map((c) => <button key={c} title={c} onMouseDown={run('foreColor', c)} style={{ width: 20, height: 20, borderRadius: 5, border: '1px solid #666', background: c, cursor: 'pointer', padding: 0 }} />)}
       </div>}
+      {linkOpen && <form onSubmit={addLink} style={{ display: 'flex', gap: 5, padding: 6, width: '100%', borderTop: '1px solid #444', marginTop: 3 }}>
+        <input autoFocus className="inline-url" type="text" inputMode="url" placeholder="https://example.com" value={url} onChange={(e) => setUrl(e.target.value)} onMouseDown={(e) => e.stopPropagation()} style={{ minWidth: 0, flex: 1, borderRadius: 5, padding: '3px 6px', font: '12px system-ui' }} />
+        <button type="submit" style={{ ...barBtn, background: '#0d99ff' }}>Apply</button>
+      </form>}
     </div>, document.body)
 }

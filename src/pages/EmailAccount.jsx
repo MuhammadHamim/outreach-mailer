@@ -22,14 +22,15 @@ export default function EmailAccount() {
   const [acct, reload] = useLoad(() => api.get('/api/account'));
   const [f, setF] = useState(null), [guide, setGuide] = useState(false), [check, setCheck] = useState(null), [checking, setChecking] = useState(false);
   const toast = useToast();
-  useEffect(() => { if (acct) setF({ provider: acct.provider, email: acct.email, name: acct.name, secret: '', replyTo: acct.replyTo, username: acct.username, host: acct.host, port: acct.port, security: acct.security, imapHost: acct.imapHost, imapPort: acct.imapPort }); }, [acct]);
+  useEffect(() => { if (acct) setF({ id:acct.id, provider: acct.provider, email: acct.email, name: acct.name, secret: '', replyTo: acct.replyTo, username: acct.username, host: acct.host, port: acct.port, security: acct.security, imapHost: acct.imapHost, imapPort: acct.imapPort }); }, [acct]);
   if (!providers || !acct || !f) return <section className="card pad"><div className="spinner" /></section>;
   if (!acct.editable) return <section className="card pad"><h3>Email account</h3><p className="muted">This server is configured through environment variables (MAIL_PROVIDER, MAIL_EMAIL, MAIL_PASSWORD).</p></section>;
 
   const p = providers.find((x) => x.id === f.provider) || providers[0];
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  const pick = (q) => { setF((x) => ({ ...x, provider: q.id, host: q.host, port: q.port, security: q.security, secret: q.id === acct.provider ? x.secret : '' })); setCheck(null); };
-  const save = async () => { try { await api.put('/api/account', f); toast('Email account saved'); set('secret', ''); reload(); } catch (e) { toast(e.message, 'err'); } };
+  const pick = (q) => { setF((x) => ({ ...x, provider: q.id, host: q.host, port: q.port, security: q.security, secret: '' })); setCheck(null); };
+  const save = async () => { try { await api.put('/api/account', f); toast('Email account saved and set as default'); await reload(); } catch (e) { toast(e.message, 'err'); } };
+  const addAccount = () => { setF({provider:'qq',email:'',name:'',secret:'',replyTo:'',username:'',host:'smtp.qq.com',port:465,security:'ssl',imapHost:'',imapPort:993}); setCheck(null); };
   const test = async () => { setChecking(true); setCheck(null); try { setCheck(await api.get('/api/smtp-check')); } catch (e) { setCheck({ ok: false, message: e.message }); } setChecking(false); };
   const sameProvider = p.id === acct.provider;
 
@@ -37,6 +38,10 @@ export default function EmailAccount() {
     <section className="card pad">
       <h3>Email account</h3>
       <p className="muted">Choose the mailbox the emails are sent from. Stored only on this computer.</p>
+      <div className="account-toolbar">
+        <div className="account-default"><Field label="Default sending account" hint="All new emails and replies use this account."><select value={acct.id || ''} onChange={async e=>{await api.post('/api/account/select',{id:e.target.value});await reload();}}>{(acct.accounts||[]).map(a=><option key={a.id} value={a.id}>{a.email} · {providers.find(q=>q.id===a.provider)?.name || a.provider}</option>)}</select></Field></div>
+        <div className="btn-row account-actions"><button className="btn" onClick={addAccount}>Add account</button>{acct.id && <button className="btn danger" onClick={async()=>{await api.del(`/api/account/${acct.id}`);await reload();}}>Remove account</button>}</div>
+      </div>
       <div className="banner info recommend"><Star size={16} /><span>In China? <b>QQ Mail</b> is the simplest and most reliable choice: it works without a VPN and only needs a free authorization code.{p.id !== 'qq' && <> <button className="linkbtn" onClick={() => pick(providers[0])}>Use QQ Mail</button></>}</span></div>
 
       <div className="prov-grid">
@@ -60,7 +65,7 @@ export default function EmailAccount() {
         {p.editableUser && <Field label="Username (only if different from your email)"><input value={f.username} onChange={(e) => set('username', e.target.value)} /></Field>}
       </div>
 
-      {p.editableServer ? (
+      {true ? (
         <div className="form-grid">
           <Field label="SMTP server"><input value={f.host} onChange={(e) => set('host', e.target.value)} placeholder="smtp.example.com" /></Field>
           <Field label="Port"><input type="number" value={f.port} onChange={(e) => set('port', e.target.value)} /></Field>
@@ -68,7 +73,7 @@ export default function EmailAccount() {
           <Field label="IMAP port"><input type="number" value={f.imapPort || ''} onChange={(e) => set('imapPort', e.target.value)} placeholder="993" /></Field>
           <Field label="Security"><select value={f.security} onChange={(e) => set('security', e.target.value)}><option value="ssl">SSL (port 465)</option><option value="starttls">STARTTLS (port 587)</option><option value="none">None (not recommended)</option></select></Field>
         </div>
-      ) : <p className="srv-line">Server: <code>{p.host}:{p.port}</code> · {p.security === 'ssl' ? 'SSL' : 'STARTTLS'} (set automatically)</p>}
+      ) : null}
 
       <div className="btn-row" style={{ marginTop: 14 }}>
         <button className="btn primary" onClick={save}>Save account</button>

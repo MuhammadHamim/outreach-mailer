@@ -11,7 +11,7 @@ import * as scheduler from './scheduler.js';
 import { computeTimes } from './schedule.js';
 import * as resumes from './resumes.js';
 import * as inbox from './inbox.js';
-import { sendEmail, smtpCheck, mailMode, getAccount, saveAccount, loadAccount, loadDoc, dropFromCache } from './mailer.js';
+import { sendEmail, smtpCheck, mailMode, getAccount, saveAccount, selectAccount, deleteAccount, loadAccount, loadDoc, dropFromCache } from './mailer.js';
 import { PROVIDERS } from './providers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -74,6 +74,8 @@ app.put('/api/account', wrap(async (req, res) => {
   if (db.usingFirestore) throw new Error('On a hosted deployment set MAIL_PROVIDER / MAIL_EMAIL / MAIL_PASSWORD (or QQ_EMAIL / QQ_AUTH_CODE) as environment variables instead');
   await saveAccount(req.body || {}); res.json(getAccount());
 }));
+app.post('/api/account/select', wrap(async (req,res) => { await selectAccount(req.body.id); res.json(getAccount()); }));
+app.delete('/api/account/:id', wrap(async (req,res) => { await deleteAccount(req.params.id); res.json(getAccount()); }));
 app.get('/api/smtp-check', wrap(async (req, res) => res.json(await smtpCheck())));
 
 // ---------- documents (CV, transcript...) ----------

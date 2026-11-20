@@ -70,6 +70,13 @@ input:disabled, textarea:disabled { background: var(--surface-2); color: var(--m
 input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); }
 .field { display: block; margin-bottom: 12px; } .lbl { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 16px; margin: 12px 0; }
+.account-toolbar { display: flex; align-items: flex-start; gap: 12px; margin: 16px 0 12px; }
+.account-default { flex: 1; min-width: 240px; }
+.account-default .field { margin-bottom: 0; }
+.account-actions { align-items: flex-start; padding-top: 23px; }
+.account-actions .btn { min-height: 38px; }
+.account-actions .btn.danger { color: var(--danger, #ef6a6a); }
+@media (max-width: 620px) { .account-toolbar { display: block; } .account-actions { padding-top: 0; margin: 8px 0 12px; } }
 .input-icon { position: relative; } .input-icon svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); } .input-icon input { padding-left: 36px; }
 .seg { display: inline-flex; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 3px; gap: 2px; margin: 4px 0 12px; }
 .seg button { border: 0; background: none; padding: 7px 12px; border-radius: 8px; font: inherit; font-weight: 600; font-size: 13px; color: var(--muted); cursor: pointer; }

@@ -48,7 +48,7 @@ export const PROVIDERS = [
     tips: [],
   },
   {
-    imap: { host: 'imap.gmail.com', port: 993 }, id: 'gmail', name: 'Gmail', letter: 'G', color: '#ea4335', status: 'ok',
+    imap: { host: 'imap.gmail.com', port: 993 }, id: 'gmail', name: 'Gmail', letter: 'G', color: '#ea4335', status: 'ok', editableServer: true,
     host: 'smtp.gmail.com', port: 465, security: 'ssl', secretLabel: 'App password (16 characters)', placeholder: 'you@gmail.com',
     blurb: 'Needs 2-Step Verification and an App Password.',
     intro: 'Google no longer accepts your normal password for apps. You create a 16-character App Password instead (this needs 2-Step Verification).',
@@ -56,8 +56,8 @@ export const PROVIDERS = [
       'Open your Google Account → Security and turn on **2-Step Verification** (if it is not on yet).',
       'Open the **App passwords** page (button below).',
       'Type a name such as “Outreach Mailer” and click **Create**.',
-      'Copy the 16-character password Google shows (spaces do not matter).',
-      'Paste it into “App password” here. Use your full Gmail address as the email.',
+      'Google may display the 16-character App Password in groups with spaces, for example **abtm qnib kood twnn**. Remove the spaces before entering it: **abtmqnibkoodtwnn**.',
+      'Enter the unspaced password and your full Gmail address here. The app also removes spaces automatically when saving.',
     ],
     links: [{ label: 'Security settings', url: 'https://myaccount.google.com/security' }, { label: 'App passwords page', url: 'https://myaccount.google.com/apppasswords' }],
     tips: [

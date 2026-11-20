@@ -202,7 +202,7 @@ Open **Settings → Email account**. The app sends your emails through **your ow
 #### Detailed: Gmail
 1. Open <https://myaccount.google.com/security> and turn on **2-Step Verification** (App passwords do not exist without it).
 2. Open <https://myaccount.google.com/apppasswords>, type a name such as *Outreach Mailer* and press **Create**.
-3. Copy the 16-character password Google shows (spaces do not matter).
+3. Google may show the 16-character App Password in groups, such as `abtm qnib kood twnn`. Remove the spaces before entering it: `abtmqnibkoodtwnn`. The app also removes spaces automatically when saving.
 4. In the app: provider **Gmail**, your full address, paste the app password, **Save account**, **Test connection**.
 5. Stay under Gmail's daily limit: set **Daily send cap** in Settings (for example 100–200 for a first batch).
 

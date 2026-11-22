@@ -142,6 +142,52 @@ const normTags = (t) => [...new Set((Array.isArray(t) ? t : []).map((x) => Strin
 app.get('/api/emails', wrap(async (req, res) => {
   res.json((await db.list('emails')).sort((a, b) => a.createdAt - b.createdAt || a.order - b.order));
 }));
+
+const normEmail = (s) => String(s || '').trim().toLowerCase();
+
+// Which of these addresses are already in the app, and what was sent to them?
+app.post('/api/emails/check-duplicates', wrap(async (req, res) => {
+  const wanted = new Set((req.body.addresses || []).map(normEmail).filter(Boolean));
+  const out = {};
+  for (const e of await db.list('emails')) {
+    const key = normEmail(e.to);
+    if (!wanted.has(key)) continue;
+    (out[key] ||= []).push({
+      id: e.id, status: e.status, kind: e.kind || 'original',
+      subject: e.subject, body: e.body, batchName: e.batchName || '',
+      sentAt: e.sentAt || null, createdAt: e.createdAt || null,
+      attachments: Array.isArray(e.attachments) ? e.attachments.map((a) => a.filename || a.name || 'file') : [],
+    });
+  }
+  for (const k of Object.keys(out)) out[k].sort((a, b) => (b.sentAt || b.createdAt || 0) - (a.sentAt || a.createdAt || 0));
+  res.json(out);
+}));
+
+// compose one email by hand: save as draft, send now, or schedule for a specific time
+app.post('/api/emails', wrap(async (req, res) => {
+  const { to, toName = '', subject, body, attachments = [], tags = [], mode = 'draft', sendAt } = req.body || {};
+  const addr = String(to || '').trim();
+  if (!/^\S+@\S+\.\S+$/.test(addr)) throw new Error('Enter a valid recipient email address');
+  if (!String(subject || '').trim()) throw new Error('Subject is required');
+  if (!String(body || '').trim()) throw new Error('Write a message first');
+  const now = Date.now(), id = db.newId();
+  let plan = { status: 'draft', sendAt: null, windowEnd: null };
+  if (mode === 'now') plan = { status: 'scheduled', sendAt: now, windowEnd: now + scheduler.graceMs() };
+  else if (mode === 'schedule') {
+    const t = Number(sendAt);
+    if (!t || t < now - 60000) throw new Error('Pick a time in the future');
+    plan = { status: 'scheduled', sendAt: t, windowEnd: t + scheduler.graceMs() };
+  }
+  await db.set('emails', id, {
+    batchId: null, batchName: 'Manual', to: addr, toName: String(toName).trim(),
+    subject: String(subject).trim(), body: String(body),
+    attachments: Array.isArray(attachments) ? attachments : [], tags: normTags(tags),
+    ...plan, sentAt: null, error: null, order: 0, createdAt: now,
+  });
+  if (plan.status === 'scheduled') await scheduler.reload();
+  res.json({ id, status: plan.status });
+}));
+
 app.patch('/api/emails/:id', wrap(async (req, res) => {
   const e = await db.get('emails', req.params.id); if (!e) throw new Error('Not found');
   const patch = {};

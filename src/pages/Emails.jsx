@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Search, CalendarClock, Trash2, Paperclip, Pencil, RefreshCw, Send, Mail, X, CheckCheck, Undo2, Shuffle, Tag, MessageCircle, CornerUpLeft, Inbox, BellRing } from 'lucide-react';
 import { api } from '../api.js';
 import { Badge, Empty, Field, Modal, Toggle, fmtTime, useToast } from '../ui.jsx';
+import ComposeModal from '../ComposeModal.jsx';
 
 const STATUSES = ['draft', 'scheduled', 'sending', 'sent', 'replied', 'failed', 'missed'];
 const pad = (n) => String(n).padStart(2, '0');
@@ -67,6 +68,7 @@ export default function Emails() {
       <header className="page-head">
         <div><h1>Emails</h1><p className="muted">{emails ? `${emails.length} emails` : 'Loading…'} · times in {tz} · updates live</p></div>
         <div className="btn-row">
+          <button className="btn primary" onClick={() => setModal({ type: 'compose' })}><Pencil size={16} /> Compose</button>
           <button className="btn" onClick={check} disabled={syncing} title={inbox.error || 'Look in your mailbox for replies'}><Inbox size={16} className={syncing ? 'spin' : ''} /> {syncing ? 'Checking…' : 'Check replies'}</button>
           <button className="btn" onClick={() => load()}><RefreshCw size={16} /> Refresh</button>
         </div>
@@ -140,6 +142,7 @@ export default function Emails() {
       {modal?.type === 'tags' && <TagModal rows={selRows} all={allTags} onClose={() => setModal(null)} onApply={(add, remove) => run(() => api.post('/api/emails/bulk-tags', { ids, add, remove }), 'Tags updated')} />}
       {modal?.type === 'followup' && <FollowUpModal docs={docs} rows={modal.only ? (emails || []).filter((e) => modal.only.includes(e.id)) : selRows.filter((e) => e.status === 'sent' && !e.replyCount && !e.parentId)} onClose={() => setModal(null)}
         onCreate={(p) => run(async () => { const r = await api.post('/api/followups', { ids: modal.only || ids, ...p }); if (r.created) setStatus(''); }, 'Follow-up drafts created: schedule them like any email')} />}
+      {modal?.type === 'compose' && <ComposeModal docs={docs} onClose={() => setModal(null)} onDone={(m) => { toast(m); setModal(null); load(true); }} />}
     </div>
   );
 }

@@ -22,7 +22,7 @@ export default function EmailAccount() {
   const [acct, reload] = useLoad(() => api.get('/api/account'));
   const [f, setF] = useState(null), [guide, setGuide] = useState(false), [check, setCheck] = useState(null), [checking, setChecking] = useState(false);
   const toast = useToast();
-  useEffect(() => { if (acct) setF({ id:acct.id, provider: acct.provider, email: acct.email, name: acct.name, secret: '', replyTo: acct.replyTo, username: acct.username, host: acct.host, port: acct.port, security: acct.security, imapHost: acct.imapHost, imapPort: acct.imapPort }); }, [acct]);
+  useEffect(() => { if (acct) setF({ id:acct.id, provider: acct.provider, email: acct.email, name: acct.name, secret: '', replyTo: acct.replyTo, username: acct.username, host: acct.host, port: acct.port, security: acct.security, imapHost: acct.imapHost, imapPort: acct.imapPort, dailyLimit: acct.dailyLimit || 0 }); }, [acct]);
   if (!providers || !acct || !f) return <section className="card pad"><div className="spinner" /></section>;
   if (!acct.editable) return <section className="card pad"><h3>Email account</h3><p className="muted">This server is configured through environment variables (MAIL_PROVIDER, MAIL_EMAIL, MAIL_PASSWORD).</p></section>;
 
@@ -30,8 +30,11 @@ export default function EmailAccount() {
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const pick = (q) => { setF((x) => ({ ...x, provider: q.id, host: q.host, port: q.port, security: q.security, secret: '' })); setCheck(null); };
   const save = async () => { try { await api.put('/api/account', f); toast('Email account saved and set as default'); await reload(); } catch (e) { toast(e.message, 'err'); } };
-  const addAccount = () => { setF({provider:'qq',email:'',name:'',secret:'',replyTo:'',username:'',host:'smtp.qq.com',port:465,security:'ssl',imapHost:'',imapPort:993}); setCheck(null); };
+  const addAccount = () => { setF({provider:'qq',email:'',name:'',secret:'',replyTo:'',username:'',host:'smtp.qq.com',port:465,security:'ssl',imapHost:'',imapPort:993,dailyLimit:0}); setCheck(null); };
   const test = async () => { setChecking(true); setCheck(null); try { setCheck(await api.get('/api/smtp-check')); } catch (e) { setCheck({ ok: false, message: e.message }); } setChecking(false); };
+  const testOne = async (id) => { try { const r = await api.get(`/api/smtp-check?id=${id}`); toast(r.message, r.ok ? undefined : 'err'); } catch (e) { toast(e.message, 'err'); } await reload(); };
+  const patch = async (id, b) => { try { await api.put(`/api/account/${id}/settings`, b); await reload(); } catch (e) { toast(e.message, 'err'); } };
+  const toggleRotate = async (on) => { try { await api.post('/api/account/rotate', { on }); await reload(); } catch (e) { toast(e.message, 'err'); } };
   const sameProvider = p.id === acct.provider;
 
   return (
@@ -41,6 +44,22 @@ export default function EmailAccount() {
       <div className="account-toolbar">
         <div className="account-default"><Field label="Default sending account" hint="All new emails and replies use this account."><select value={acct.id || ''} onChange={async e=>{await api.post('/api/account/select',{id:e.target.value});await reload();}}>{(acct.accounts||[]).map(a=><option key={a.id} value={a.id}>{a.email} · {providers.find(q=>q.id===a.provider)?.name || a.provider}</option>)}</select></Field></div>
         <div className="btn-row account-actions"><button className="btn" onClick={addAccount}>Add account</button>{acct.id && <button className="btn danger" onClick={async()=>{await api.del(`/api/account/${acct.id}`);await reload();}}>Remove account</button>}</div>
+      </div>
+      <div className="acct-list">
+        {(acct.accounts || []).map((a) => {
+          const h = a.health, dot = !a.enabled ? '#94a3b8' : h ? (h.ok ? '#16a34a' : '#dc2626') : '#f59e0b';
+          return (
+            <div key={a.id} className={`acct-row ${a.id === acct.id ? 'on' : ''}`}>
+              <span className="acct-dot" style={{ background: dot }} title={h?.message || 'Not checked yet'} />
+              <div className="acct-main"><b>{a.email}</b> <span className="muted">· {a.sentToday}{a.dailyLimit ? `/${a.dailyLimit}` : ''} sent today{a.id === acct.id ? ' · default' : ''}</span></div>
+              <button className="btn" onClick={() => testOne(a.id)}>Test</button>
+              <label className="chk"><input type="checkbox" checked={a.enabled} onChange={(e) => patch(a.id, { enabled: e.target.checked })} /> Active</label>
+            </div>
+          );
+        })}
+        {(acct.accounts || []).length > 1 && (
+          <label className="chk"><input type="checkbox" checked={!!acct.rotate} onChange={(e) => toggleRotate(e.target.checked)} /> Rotate scheduled emails across active accounts (least-used first; skips accounts at their limit or failing)</label>
+        )}
       </div>
       <div className="banner info recommend"><Star size={16} /><span>In China? <b>QQ Mail</b> is the simplest and most reliable choice: it works without a VPN and only needs a free authorization code.{p.id !== 'qq' && <> <button className="linkbtn" onClick={() => pick(providers[0])}>Use QQ Mail</button></>}</span></div>
 
@@ -62,6 +81,7 @@ export default function EmailAccount() {
         <Field label="Sender name" hint="Shown to the people you email."><input value={f.name} onChange={(e) => set('name', e.target.value)} /></Field>
         <Field label={p.secretLabel} hint={acct.hasCode && sameProvider ? 'Saved. Leave blank to keep it.' : 'Not saved yet.'}><input type="password" autoComplete="new-password" value={f.secret} onChange={(e) => set('secret', e.target.value)} placeholder={acct.hasCode && sameProvider ? '••••••••••••' : ''} /></Field>
         <Field label="Reply-to (optional)" hint="Replies go to this address instead, e.g. your university mail."><input value={f.replyTo} onChange={(e) => set('replyTo', e.target.value)} placeholder="optional" /></Field>
+        <Field label="Daily limit for this account" hint="0 = no limit."><input type="number" min="0" value={f.dailyLimit || 0} onChange={(e) => set('dailyLimit', e.target.value)} /></Field>
         {p.editableUser && <Field label="Username (only if different from your email)"><input value={f.username} onChange={(e) => set('username', e.target.value)} /></Field>}
       </div>
 

@@ -2,7 +2,7 @@
 // so ticking every 10 s costs zero database reads.
 import { DateTime } from 'luxon';
 import * as db from './db.js';
-import { sendEmail } from './mailer.js';
+import { sendEmail, pickAccountId } from './mailer.js';
 import { syncReplies } from './inbox.js';
 
 const queue = new Map(); // emailId -> { at, until }  (ms)
@@ -53,14 +53,16 @@ async function tick() {
   if (!due) return;
   if (settings.dailyCap && todaySent() >= settings.dailyCap) return;
   const [id] = due;
+  const accountId = pickAccountId();
+  if (accountId === null) return; // every account is at its limit or cooling off: leave the email queued
   busy = true;
   try {
     queue.delete(id);
     if (!(await db.claim('emails', id, 'scheduled', { status: 'sending' }))) return; // changed/cancelled meanwhile
     const email = await db.get('emails', id);
     try {
-      const messageId = await sendEmail(email);
-      await db.update('emails', id, { status: 'sent', sentAt: Date.now(), error: null, messageId });
+      const messageId = await sendEmail({ ...email, accountId });
+      await db.update('emails', id, { status: 'sent', sentAt: Date.now(), error: null, messageId, accountId: accountId || null });
       const today = DateTime.now().setZone(settings.tz).toISODate();
       counter = { date: today, count: (counter.date === today ? counter.count : 0) + 1 };
       await db.set('settings', 'counter', counter);

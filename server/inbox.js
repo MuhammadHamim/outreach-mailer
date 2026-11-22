@@ -3,7 +3,7 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { createHash } from 'node:crypto';
 import * as db from './db.js';
-import { imapCredentials, mailMode } from './mailer.js';
+import { imapCredentials, mailMode, allAccounts } from './mailer.js';
 import { explainImapError } from './providers.js';
 
 let running = false;
@@ -21,18 +21,18 @@ export function splitQuoted(text) {
   return { text: lines.slice(0, i).join('\n').trim(), quoted: lines.slice(i).join('\n').trim().slice(0, 12000) };
 }
 
-export async function syncReplies() {
+async function syncAccount(a) {
   if (running) return { skipped: true };
-  const cred = imapCredentials();
+  const cred = imapCredentials(a);
   if (mailMode === 'dry' || !cred.ready) return { checked: 0, newReplies: 0, skipped: true };
-  const sent = (await db.list('emails')).filter((e) => ['sent', 'replied'].includes(e.status) && e.sentAt && e.to);
+  const sent = (await db.list('emails')).filter((e) => ['sent', 'replied'].includes(e.status) && e.sentAt && e.to && (!e.accountId || e.accountId === a.id));
   if (!sent.length) { status.lastSync = Date.now(); return { checked: 0, newReplies: 0 }; }
   running = true; status.syncing = true; status.error = '';
   const me = cred.address.toLowerCase();
   const byMsg = new Map(sent.filter((e) => e.messageId).map((e) => [norm(e.messageId), e]));
   const byAddr = new Map();
   for (const e of sent.sort((a, b) => a.sentAt - b.sentAt)) { const k = e.to.toLowerCase(); (byAddr.get(k) || byAddr.set(k, []).get(k)).push(e); }
-  const state = (await db.get('settings', 'inbox')) || {};
+  const state = (await db.get('settings', `inbox_${a.id}`)) || {};
   const client = new ImapFlow({ host: cred.host, port: cred.port, secure: true, auth: { user: cred.user, pass: cred.pass }, logger: false, clientInfo: { name: 'OutreachMailer', version: '1.0' }, socketTimeout: 90000, tls: { rejectUnauthorized: process.env.IMAP_TLS_INSECURE !== '1' } });
   client.on('error', () => {});
   let newReplies = 0, checked = 0;
@@ -75,7 +75,7 @@ export async function syncReplies() {
         if (cur) await db.update('emails', cur.id, { replyCount: (cur.replyCount || 0) + 1, unread: (cur.unread || 0) + 1, lastReplyAt: Date.now(), ...(cur.status === 'sent' && !auto ? { status: 'replied' } : {}) });
         newReplies++;
       }
-      await db.set('settings', 'inbox', { validity, lastUid: uids.length ? Math.max(...uids) : state.lastUid || 0 });
+      await db.set('settings', `inbox_${a.id}`, { validity, lastUid: uids.length ? Math.max(...uids) : state.lastUid || 0 });
     } finally { lock.release(); }
     await client.logout();
     status.lastSync = Date.now();
@@ -85,4 +85,15 @@ export async function syncReplies() {
     throw new Error(status.error);
   } finally { running = false; status.syncing = false; }
   return { checked, newReplies };
+}
+
+export async function syncReplies() {
+  let checked = 0, newReplies = 0, skipped = true, ran = 0; const errors = [];
+  for (const a of allAccounts().filter((x) => x.enabled !== false)) {
+    ran++;
+    try { const r = await syncAccount(a); if (!r.skipped) skipped = false; checked += r.checked || 0; newReplies += r.newReplies || 0; }
+    catch (e) { errors.push(`${a.email}: ${e.message}`); }
+  }
+  if (ran && errors.length === ran) throw new Error(errors.join(' | '));
+  return { checked, newReplies, ...(skipped ? { skipped: true } : {}), ...(errors.length ? { errors } : {}) };
 }

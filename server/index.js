@@ -11,7 +11,7 @@ import * as scheduler from './scheduler.js';
 import { computeTimes } from './schedule.js';
 import * as resumes from './resumes.js';
 import * as inbox from './inbox.js';
-import { sendEmail, smtpCheck, mailMode, getAccount, saveAccount, selectAccount, deleteAccount, loadAccount, loadDoc, dropFromCache } from './mailer.js';
+import { sendEmail, smtpCheck, mailMode, getAccount, saveAccount, selectAccount, deleteAccount, loadAccount, loadDoc, dropFromCache, patchAccount, setRotate } from './mailer.js';
 import { PROVIDERS } from './providers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -76,7 +76,9 @@ app.put('/api/account', wrap(async (req, res) => {
 }));
 app.post('/api/account/select', wrap(async (req,res) => { await selectAccount(req.body.id); res.json(getAccount()); }));
 app.delete('/api/account/:id', wrap(async (req,res) => { await deleteAccount(req.params.id); res.json(getAccount()); }));
-app.get('/api/smtp-check', wrap(async (req, res) => res.json(await smtpCheck())));
+app.get('/api/smtp-check', wrap(async (req, res) => res.json(await smtpCheck(req.query.id))));
+app.put('/api/account/:id/settings', wrap(async (req, res) => { await patchAccount(req.params.id, req.body || {}); res.json(getAccount()); }));
+app.post('/api/account/rotate', wrap(async (req, res) => { await setRotate(req.body?.on); res.json(getAccount()); }));
 
 // ---------- documents (CV, transcript...) ----------
 const CHUNK = 700_000; // base64 chars per Firestore doc (limit is ~1 MB)
@@ -248,8 +250,8 @@ app.post('/api/emails/:id/reply', wrap(async (req, res) => {
   const lastIn = replies.filter((r) => !r.auto).at(-1);
   const refs = [e.messageId, ...kids.map((k) => k.messageId), ...replies.map((r) => r.messageId)].filter(Boolean);
   const subject = /^re:/i.test(e.subject) ? e.subject : `Re: ${e.subject}`, to = lastIn?.from || e.to, attachments = Array.isArray(req.body.attachments) ? req.body.attachments : [];
-  const messageId = await sendEmail({ to, subject, body: text, attachments, inReplyTo: lastIn?.messageId || refs.at(-1), references: refs.join(' ') });
-  await db.set('emails', db.newId(), { batchId: e.batchId, batchName: e.batchName, to, toName: e.toName, subject, body: text, attachments, status: 'sent', kind: 'reply', parentId: e.id, sentAt: Date.now(), messageId, tags: [], order: 0, createdAt: Date.now() });
+  const messageId = await sendEmail({ to, subject, body: text, attachments, inReplyTo: lastIn?.messageId || refs.at(-1), references: refs.join(' '), accountId: e.accountId });
+  await db.set('emails', db.newId(), { batchId: e.batchId, batchName: e.batchName, to, toName: e.toName, subject, body: text, attachments, status: 'sent', kind: 'reply', accountId: e.accountId || null, parentId: e.id, sentAt: Date.now(), messageId, tags: [], order: 0, createdAt: Date.now() });
   res.json({ ok: true });
 }));
 // create follow-up drafts (as replies in the same conversation) for sent emails that got no answer

@@ -6,6 +6,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual, randomBytes } from 'node:crypto';
+import sanitizeHtml from 'sanitize-html';
+import { convert } from 'html-to-text';
 import * as db from './db.js';
 import * as scheduler from './scheduler.js';
 import { computeTimes } from './schedule.js';
@@ -165,13 +167,21 @@ app.post('/api/emails/check-duplicates', wrap(async (req, res) => {
   res.json(out);
 }));
 
-// compose one email by hand: save as draft, send now, or schedule for a specific time
+const cleanHtml = (h) => sanitizeHtml(String(h || ''), {
+  allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'span', 'u', 's', 'mark', 'h2', 'h3', 'table', 'tbody', 'tr', 'td']),
+  allowedAttributes: { '*': ['style', 'href', 'src', 'alt', 'width', 'height', 'target', 'rel', 'align', 'valign', 'cellpadding', 'cellspacing', 'border', 'colspan', 'rowspan', 'bgcolor'] },
+  allowedSchemes: ['http', 'https', 'mailto', 'tel'],
+});
+const htmlToPlain = (h) => convert(h, { wordwrap: false, selectors: [{ selector: 'img', format: 'skip' }, { selector: 'a', options: { hideLinkHrefIfSameAsText: true } }] });
+
 app.post('/api/emails', wrap(async (req, res) => {
-  const { to, toName = '', subject, body, attachments = [], tags = [], mode = 'draft', sendAt } = req.body || {};
+  const { to, toName = '', subject, body, html, attachments = [], tags = [], mode = 'draft', sendAt } = req.body || {};
   const addr = String(to || '').trim();
   if (!/^\S+@\S+\.\S+$/.test(addr)) throw new Error('Enter a valid recipient email address');
   if (!String(subject || '').trim()) throw new Error('Subject is required');
-  if (!String(body || '').trim()) throw new Error('Write a message first');
+  const safeHtml = html ? cleanHtml(html) : '';
+  const text = safeHtml ? htmlToPlain(safeHtml) : String(body || '');
+  if (!text.trim()) throw new Error('Write a message first');
   const now = Date.now(), id = db.newId();
   let plan = { status: 'draft', sendAt: null, windowEnd: null };
   if (mode === 'now') plan = { status: 'scheduled', sendAt: now, windowEnd: now + scheduler.graceMs() };
@@ -182,13 +192,25 @@ app.post('/api/emails', wrap(async (req, res) => {
   }
   await db.set('emails', id, {
     batchId: null, batchName: 'Manual', to: addr, toName: String(toName).trim(),
-    subject: String(subject).trim(), body: String(body),
+    subject: String(subject).trim(), body: text, html: safeHtml,
     attachments: Array.isArray(attachments) ? attachments : [], tags: normTags(tags),
     ...plan, sentAt: null, error: null, order: 0, createdAt: now,
   });
   if (plan.status === 'scheduled') await scheduler.reload();
   res.json({ id, status: plan.status });
 }));
+
+// ---- Signatures (new) ----
+app.get('/api/signatures', wrap(async (req, res) => res.json((await db.list('signatures')).sort((a, b) => a.createdAt - b.createdAt))));
+app.post('/api/signatures', wrap(async (req, res) => {
+  const { id: given, name, templateId, fields = {}, html } = req.body || {};
+  if (!String(name || '').trim() || !String(html || '').trim()) throw new Error('Signature needs a name and content');
+  const id = given || db.newId(), old = given ? await db.get('signatures', given) : null;
+  const doc = { name: String(name).trim().slice(0, 80), templateId: String(templateId || ''), fields, html: cleanHtml(html), createdAt: old?.createdAt || Date.now() };
+  await db.set('signatures', id, doc);
+  res.json({ id, ...doc });
+}));
+app.delete('/api/signatures/:id', wrap(async (req, res) => { await db.remove('signatures', req.params.id); res.json({ ok: true }); }));
 
 app.patch('/api/emails/:id', wrap(async (req, res) => {
   const e = await db.get('emails', req.params.id); if (!e) throw new Error('Not found');
@@ -197,6 +219,7 @@ app.patch('/api/emails/:id', wrap(async (req, res) => {
   else if (req.body.status === 'sent' && e.status === 'replied') patch.status = 'sent';
   else if (isLocked(e) && Object.keys(pick(req.body)).length) throw new Error('This email was already sent and can no longer be edited');
   Object.assign(patch, isLocked(e) ? {} : pick(req.body));
+  if (patch.body !== undefined) patch.html = ''; // a plain-text edit replaces the rich version
   if (patch.to && !/^\S+@\S+\.\S+$/.test(patch.to)) throw new Error('Invalid email address');
   if ('tags' in req.body) patch.tags = normTags(req.body.tags);
   if ('noFollowUp' in req.body) patch.noFollowUp = !!req.body.noFollowUp;

@@ -120,13 +120,13 @@ export async function loadDoc(id) {
 }
 export const dropFromCache = (id) => cache.delete(id);
 
-export async function sendEmail({ to, subject, body, attachments = [], inReplyTo, references, accountId }) {
+export async function sendEmail({ to, subject, body, html, attachments = [], inReplyTo, references, accountId }) {
   const a = find(accountId);
   if (mailMode === 'smtp' && (!a.email || !a.code)) throw new Error('Email account is not set up yet - open Settings, choose your provider and enter your email and password');
   const files = [];
   for (const id of attachments) { const { meta, buffer } = await loadDoc(id); files.push({ filename: meta.name, content: buffer }); }
   try {
-    const info = await getTransport(a).sendMail({ from: { name: a.name, address: a.email || 'test@example.com' }, to, subject, text: body, attachments: files, ...(a.replyTo ? { replyTo: a.replyTo } : {}), ...(inReplyTo ? { inReplyTo, references: references || inReplyTo } : {}) });
+    const info = await getTransport(a).sendMail({ from: { name: a.name, address: a.email || 'test@example.com' }, to, subject, text: body, ...(html ? { html } : {}), attachments: files, ...(a.replyTo ? { replyTo: a.replyTo } : {}), ...(inReplyTo ? { inReplyTo, references: references || inReplyTo } : {}) });
     if (mailMode === 'dry') console.log(`[dry-run] would send to ${to} | ${subject} | ${files.length} attachment(s)`);
     health.set(a.id, { ok: true, at: Date.now(), message: 'Last send OK' });
     bump(a.id).catch(() => {});

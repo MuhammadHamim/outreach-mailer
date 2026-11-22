@@ -371,6 +371,7 @@ app.post(
           toName: r.toName || "",
           subject: r.subject.trim(),
           body: r.body,
+          html: r.html ? cleanHtml(r.html) : "",
           attachments,
           tags: [],
           status: "draft",
@@ -467,6 +468,24 @@ app.post(
   }),
 );
 
+const embedSignaturePhoto = async (signature) => {
+  if (!signature?.fields && !signature?.html) return signature;
+  const fields = { ...(signature.fields || {}) };
+  const photo = String(fields.photo || "").trim();
+  const match = photo.match(/\/api\/documents\/([^/]+)\/download/);
+  if (!match) return signature;
+  try {
+    const { meta, buffer } = await loadDoc(match[1]);
+    const dataUrl = `data:${meta.mime || "image/jpeg"};base64,${buffer.toString("base64")}`;
+    fields.photo = dataUrl;
+    let html = String(signature.html || "");
+    html = html.replaceAll(photo, dataUrl);
+    return { ...signature, fields, html };
+  } catch {
+    return signature;
+  }
+};
+
 const cleanHtml = (h) =>
   sanitizeHtml(String(h || ""), {
     allowedTags: sanitizeHtml.defaults.allowedTags.concat([
@@ -502,7 +521,7 @@ const cleanHtml = (h) =>
         "bgcolor",
       ],
     },
-    allowedSchemes: ["http", "https", "mailto", "tel"],
+    allowedSchemes: ["http", "https", "mailto", "tel", "data"],
   });
 const htmlToPlain = (h) =>
   convert(h, {
@@ -576,16 +595,23 @@ app.post(
 // ---- Signatures (new) ----
 app.get(
   "/api/signatures",
-  wrap(async (req, res) =>
-    res.json(
-      (await db.list("signatures")).sort((a, b) => a.createdAt - b.createdAt),
-    ),
-  ),
+  wrap(async (req, res) => {
+    const list = await db.list("signatures");
+    const hydrated = await Promise.all(list.map(embedSignaturePhoto));
+    res.json(hydrated.sort((a, b) => a.createdAt - b.createdAt));
+  }),
 );
 app.post(
   "/api/signatures",
   wrap(async (req, res) => {
-    const { id: given, name, templateId, fields = {}, html, css = "" } = req.body || {};
+    const {
+      id: given,
+      name,
+      templateId,
+      fields = {},
+      html,
+      css = "",
+    } = req.body || {};
     if (!String(name || "").trim() || !String(html || "").trim())
       throw new Error("Signature needs a name and content");
     const id = given || db.newId(),
@@ -599,8 +625,9 @@ app.post(
       isDefault: old?.isDefault || false,
       createdAt: old?.createdAt || Date.now(),
     };
-    await db.set("signatures", id, doc);
-    res.json({ id, ...doc });
+    const hydrated = await embedSignaturePhoto(doc);
+    await db.set("signatures", id, hydrated);
+    res.json({ id, ...hydrated });
   }),
 );
 app.post(
@@ -608,8 +635,12 @@ app.post(
   wrap(async (req, res) => {
     const signatures = await db.list("signatures");
     const id = req.params.id === "none" ? null : req.params.id;
-    if (id && !signatures.some((s) => s.id === id)) throw new Error("Signature not found");
-    await db.updateMany("signatures", signatures.map((s) => [s.id, { isDefault: s.id === id }]));
+    if (id && !signatures.some((s) => s.id === id))
+      throw new Error("Signature not found");
+    await db.updateMany(
+      "signatures",
+      signatures.map((s) => [s.id, { isDefault: s.id === id }]),
+    );
     res.json({ ok: true });
   }),
 );

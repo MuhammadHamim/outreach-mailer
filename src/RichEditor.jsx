@@ -6,6 +6,39 @@ import TextAlign from "@tiptap/extension-text-align";
 import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
+import "@fontsource/roboto/latin-400.css";
+import "@fontsource/roboto/latin-700.css";
+import "@fontsource/roboto/latin-400-italic.css";
+import "@fontsource/open-sans/latin-400.css";
+import "@fontsource/open-sans/latin-700.css";
+import "@fontsource/open-sans/latin-400-italic.css";
+import "@fontsource/lato/latin-400.css";
+import "@fontsource/lato/latin-700.css";
+import "@fontsource/lato/latin-400-italic.css";
+import "@fontsource/montserrat/latin-400.css";
+import "@fontsource/montserrat/latin-700.css";
+import "@fontsource/montserrat/latin-400-italic.css";
+import "@fontsource/source-sans-3/latin-400.css";
+import "@fontsource/source-sans-3/latin-700.css";
+import "@fontsource/source-sans-3/latin-400-italic.css";
+import "@fontsource/inter/latin-400.css";
+import "@fontsource/inter/latin-700.css";
+import "@fontsource/inter/latin-400-italic.css";
+import "@fontsource/poppins/latin-400.css";
+import "@fontsource/poppins/latin-700.css";
+import "@fontsource/poppins/latin-400-italic.css";
+import "@fontsource/merriweather/latin-400.css";
+import "@fontsource/merriweather/latin-700.css";
+import "@fontsource/merriweather/latin-400-italic.css";
+import "@fontsource/playfair-display/latin-400.css";
+import "@fontsource/playfair-display/latin-700.css";
+import "@fontsource/playfair-display/latin-400-italic.css";
+import "@fontsource/lora/latin-400.css";
+import "@fontsource/lora/latin-700.css";
+import "@fontsource/lora/latin-400-italic.css";
+import "@fontsource/eb-garamond/latin-400.css";
+import "@fontsource/eb-garamond/latin-700.css";
+import "@fontsource/eb-garamond/latin-400-italic.css";
 import {
   Bold,
   Italic,
@@ -25,6 +58,46 @@ import {
 } from "lucide-react";
 import "./compose-extras.css";
 
+const FONTS = [
+  ["", "Default"],
+  ["Arial,Helvetica,sans-serif", "Arial"],
+  ["Georgia,'Times New Roman',serif", "Georgia"],
+  ["Calibri,'Segoe UI',Arial,sans-serif", "Calibri"],
+  ["'Times New Roman',Times,serif", "Times New Roman"],
+  ["Garamond,'Palatino Linotype',Georgia,serif", "Garamond"],
+  ["Roboto,'Microsoft YaHei','PingFang SC',sans-serif", "Roboto"],
+  ["'Open Sans','Microsoft YaHei','PingFang SC',sans-serif", "Open Sans"],
+  ["Lato,'Microsoft YaHei','PingFang SC',sans-serif", "Lato"],
+  ["Montserrat,'Microsoft YaHei','PingFang SC',sans-serif", "Montserrat"],
+  ["'Source Sans 3','Microsoft YaHei','PingFang SC',sans-serif", "Source Sans 3"],
+  ["Inter,'Microsoft YaHei','PingFang SC',sans-serif", "Inter"],
+  ["Poppins,'Microsoft YaHei','PingFang SC',sans-serif", "Poppins"],
+  ["Merriweather,Georgia,serif", "Merriweather"],
+  ["'Playfair Display',Georgia,serif", "Playfair Display"],
+  ["Lora,Georgia,serif", "Lora"],
+  ["'EB Garamond',Garamond,Georgia,serif", "EB Garamond"],
+];
+
+const FontStyle = TextStyle.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      fontSize: {
+        default: null,
+        parseHTML: (element) => element.style.fontSize || null,
+        renderHTML: (attributes) =>
+          attributes.fontSize ? { style: `font-size: ${attributes.fontSize}` } : {},
+      },
+      fontFamily: {
+        default: null,
+        parseHTML: (element) => element.style.fontFamily || null,
+        renderHTML: (attributes) =>
+          attributes.fontFamily ? { style: `font-family: ${attributes.fontFamily}` } : {},
+      },
+    };
+  },
+});
+
 // value = initial HTML (read once). onChange(html, plainText) fires on every edit.
 export default function RichEditor({ value = "", onChange, minHeight = 220 }) {
   const editor = useEditor({
@@ -37,7 +110,7 @@ export default function RichEditor({ value = "", onChange, minHeight = 220 }) {
         HTMLAttributes: { rel: "noopener noreferrer" },
       }),
       TextAlign.configure({ types: ["heading", "paragraph"] }),
-      TextStyle,
+      FontStyle,
       Color,
       Highlight.configure({ multicolor: true }),
     ],
@@ -74,11 +147,11 @@ export default function RichEditor({ value = "", onChange, minHeight = 220 }) {
       })
       .run();
   };
-  const block = editor.isActive("heading", { level: 2 })
-    ? "h2"
-    : editor.isActive("heading", { level: 3 })
-      ? "h3"
-      : "p";
+  const textStyle = editor.getAttributes("textStyle");
+  const selectedFont = textStyle.fontFamily || "";
+  const selectedSize = textStyle.fontSize
+    ? textStyle.fontSize.replace(/px$/, "")
+    : "14";
 
   return (
     <div className="rte">
@@ -92,19 +165,35 @@ export default function RichEditor({ value = "", onChange, minHeight = 220 }) {
         <span className="rte-sep" />
         <select
           className="rte-select"
-          value={block}
-          onChange={(e) =>
-            e.target.value === "p"
-              ? c().setParagraph().run()
-              : c()
-                  .toggleHeading({ level: Number(e.target.value[1]) })
-                  .run()
-          }
-          aria-label="Text style"
+          value={selectedFont}
+          onChange={(e) => {
+            if (!e.target.value) {
+              c().setMark("textStyle", { fontFamily: null }).run();
+              return;
+            }
+            c().setMark("textStyle", { fontFamily: e.target.value }).run();
+          }}
+          aria-label="Font"
         >
-          <option value="p">Normal</option>
-          <option value="h2">Large</option>
-          <option value="h3">Medium</option>
+          {FONTS.map(([value, label]) => (
+            <option key={label} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="rte-select rte-size"
+          value={selectedSize}
+          onChange={(e) =>
+            c().setMark("textStyle", { fontSize: `${e.target.value}px` }).run()
+          }
+          aria-label="Text size"
+        >
+          {[10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48].map((size) => (
+            <option key={size} value={size}>
+              {size} px
+            </option>
+          ))}
         </select>
         <span className="rte-sep" />
         <T

@@ -1,234 +1,97 @@
-// 16 email-safe signature templates (tables + inline styles only, so Gmail / Outlook / Apple Mail render them).
-// Each template: build(fields) -> HTML string. Every user value is escaped.
+// Adapted from Hamim's supplied signature HTML. Uses inline styles and tables
+// so the result remains dependable in Gmail, Outlook, and Apple Mail.
+import {
+  faFacebook,
+  faGithub,
+  faInstagram,
+  faLinkedin,
+  faTelegram,
+  faWhatsapp,
+  faWeixin,
+  faXTwitter,
+  faYoutube,
+} from "@fortawesome/free-brands-svg-icons";
 
 export const SAMPLE = {
-  name: "Your Name",
-  title: "Your Title",
-  company: "Company or University",
-  phone: "+1 555 123 4567",
-  email: "you@example.com",
-  website: "example.com",
-  linkedin: "linkedin.com/in/you",
-  tagline: "A short line about you",
-  ctaText: "Book a call",
-  ctaUrl: "example.com/call",
-  accent: "#4f46e5",
+  name: "Your Name", title: "Your title", org: "Organization", field: "Department or field",
+  email: "you@example.com", phone: "+1 555 123 4567", wcid: "", wcl: "", web: "example.com", loc: "",
+  li: "linkedin.com/in/you", gh: "", wa: "", tg: "", x: "", ig: "", fb: "", yt: "",
+  cta: "", ctau: "", tag: "", accent: "#2563eb", photo: "", mode: "logo",
+};
+const esc = (s = "") => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+const href = (s="") => /^(https?:|mailto:|tel:)/i.test(String(s).trim()) ? String(s).trim() : `https://${String(s).trim()}`;
+const brandIcons = {
+  li: [faLinkedin, "#0a66c2"],
+  gh: [faGithub, "#24292f"],
+  wc: [faWeixin, "#07c160"],
+  wa: [faWhatsapp, "#25d366"],
+  tg: [faTelegram, "#229ed9"],
+  x: [faXTwitter, "#111827"],
+  ig: [faInstagram, "#c13584"],
+  fb: [faFacebook, "#1877f2"],
+  yt: [faYoutube, "#ff0000"],
 };
 
-const esc = (s = "") =>
-  String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-const url = (u = "") => {
-  const s = String(u).trim();
-  return !s ? "" : /^(https?:|mailto:|tel:)/i.test(s) ? s : `https://${s}`;
+const brandIconHtml = (id, label, url, height = 28) => {
+  const [, color] = brandIcons[id] || [null, "#64748b"];
+  const padded = 8;
+  const badge = `<table cellpadding="0" cellspacing="0" border="0"><tr><td height="${height}" align="center" valign="middle" bgcolor="${color}" style="height:${height}px;padding:0 ${padded}px;border-radius:999px;color:#fff;font:700 11px Arial,sans-serif;white-space:nowrap">${esc(label)}</td></tr></table>`;
+  return `<td style="padding-right:6px">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none">${badge}</a>` : badge}</td>`;
 };
-const bare = (u = "") =>
-  String(u)
-    .replace(/^https?:\/\//i, "")
-    .replace(/\/$/, "");
-const FONT = "font-family:Arial,Helvetica,sans-serif;";
-const SERIF = "font-family:Georgia,'Times New Roman',serif;";
-const MONO = "font-family:Consolas,Menlo,monospace;";
-
-const link = (href, text, c, extra = "") =>
-  `<a href="${esc(href)}" style="color:${c};text-decoration:none;${extra}">${esc(text)}</a>`;
-const contact = (f, c, sep = " &nbsp;&bull;&nbsp; ") =>
-  [
-    f.phone && link(`tel:${f.phone.replace(/\s/g, "")}`, f.phone, c),
-    f.email && link(`mailto:${f.email}`, f.email, c),
-    f.website && link(url(f.website), bare(f.website), c),
-    f.linkedin && link(url(f.linkedin), "LinkedIn", c),
-  ]
-    .filter(Boolean)
-    .join(sep);
-const stack = (f, c) =>
-  [
-    f.phone && link(`tel:${f.phone.replace(/\s/g, "")}`, f.phone, c),
-    f.email && link(`mailto:${f.email}`, f.email, c),
-    f.website && link(url(f.website), bare(f.website), c),
-    f.linkedin && link(url(f.linkedin), "LinkedIn", c),
-  ]
-    .filter(Boolean)
-    .join("<br>");
-const roleLine = (f, sep = " | ") =>
-  [f.title, f.company].filter(Boolean).map(esc).join(sep);
-const img = (src, w, radius = "0") =>
-  src
-    ? `<img src="${esc(url(src))}" width="${w}" height="${w}" alt="" style="display:block;width:${w}px;height:${w}px;border:0;border-radius:${radius}">`
-    : "";
-const logo = (f, w = 90) =>
-  f.logoUrl
-    ? `<img src="${esc(url(f.logoUrl))}" width="${w}" alt="${esc(f.company || "")}" style="display:block;width:${w}px;height:auto;border:0">`
-    : "";
-const btn = (f, c) =>
-  f.ctaText && f.ctaUrl
-    ? `<a href="${esc(url(f.ctaUrl))}" style="display:inline-block;background:${c};color:#ffffff;padding:7px 15px;border-radius:5px;text-decoration:none;font-weight:bold;font-size:12px">${esc(f.ctaText)}</a>`
-    : "";
-const wrap = (inner, font = FONT) =>
-  `<table cellpadding="0" cellspacing="0" border="0" style="${font}font-size:13px;line-height:1.5;color:#333333;margin-top:18px"><tr><td>${inner}</td></tr></table>`;
-const row = (html, style = "") =>
-  html ? `<div style="${style}">${html}</div>` : "";
-
-export const SIGNATURES = [
-  {
-    id: "classic",
-    name: "Classic",
-    purpose: "Everyday use",
-    build: (f) =>
-      wrap(
-        `${row(esc(f.name), "font-size:16px;font-weight:bold;color:#111")}${row(roleLine(f), "color:#666")}${row(contact(f, f.accent), "margin-top:6px")}`,
-      ),
+const line = (symbol, value, url, accent) => {
+  if (!value) return "";
+  const badge = `<table cellpadding="0" cellspacing="0" border="0"><tr><td width="18" height="18" align="center" valign="middle" bgcolor="${accent}" style="width:18px;height:18px;border-radius:50%;color:#fff;font:700 9px Arial,sans-serif">${esc(symbol)}</td></tr></table>`;
+  return `<tr><td width="26" style="padding:4px 8px 4px 0;line-height:18px">${badge}</td><td style="padding:4px 0;font:13px/1.4 'Segoe UI',Arial,sans-serif;color:#1e293b">${url ? `<a href="${esc(href(url))}" style="color:#1e293b;text-decoration:none">${esc(value)}</a>` : esc(value)}</td></tr>`;
+};
+export const SIGNATURES = [{
+  id: "hamim-signature", name: "Hamim's signature", purpose: "Supplied style",
+  build: (f = {}) => {
+    const a = /^#[\da-f]{6}$/i.test(f.accent || "") ? f.accent : "#2563eb";
+    const n = esc(f.name || ""), initials = esc((f.name || "H").trim().charAt(0).toUpperCase());
+    const imageSize = Math.max(56, Math.min(112, Number(f.imageSize) || 88));
+    const socialSize = Math.max(24, Math.min(36, Number(f.socialIconSize) || 28));
+    const avatar = f.mode === "photo" && f.photo
+      ? `<img src="${esc(f.photo)}" width="${imageSize}" height="${imageSize}" alt="${n}" style="display:block;width:${imageSize}px;height:${imageSize}px;border-radius:50%;border:3px solid ${a};object-fit:cover">`
+      : f.mode === "logo"
+        ? `<table cellpadding="0" cellspacing="0" border="0"><tr><td width="${imageSize}" height="${imageSize}" align="center" valign="middle" bgcolor="${a}" style="width:${imageSize}px;height:${imageSize}px;border-radius:20px;font:700 ${Math.round(imageSize * 0.475)}px 'Segoe UI',Arial,sans-serif;color:#fff">${initials}</td></tr></table>`
+        : "";
+    const identity = `<td valign="middle" style="width:270px"><div style="font:700 26px/1.1 'Segoe UI',Arial,sans-serif;color:#0f172a;letter-spacing:-.6px;white-space:nowrap">${n}</div>${f.title ? `<div style="font:700 13px 'Segoe UI',Arial,sans-serif;color:${a};margin-top:6px">${esc(f.title)}</div>` : ""}${f.org || f.field ? `<div style="font:12px/1.45 'Segoe UI',Arial,sans-serif;color:#475569;margin-top:3px">${esc(f.org || "")}${f.org && f.field ? "<br>" : ""}${esc(f.field || "")}</div>` : ""}</td>`;
+    const contacts = [line("@",""+ (f.email||""),f.email ? `mailto:${f.email}` : "",a),line("T",f.phone,`tel:${(f.phone||"").replace(/\s/g,"")}`,a),line("W",f.wcid ? `WeChat: ${f.wcid}` : "",f.wcl,a),line("G",f.web,f.web,a),line("L",f.loc,"",a)].join("");
+    const username = (value) => String(value || "").trim().replace(/^@/, "").replace(/^https?:\/\/(www\.)?/i, "").replace(/^([a-z]+\.(com|org|net)\/)/i, "").replace(/\/$/, "");
+    const socialLinks = [
+      ["li", "LinkedIn", username(f.li) ? `https://www.linkedin.com/in/${encodeURIComponent(username(f.li))}` : ""],
+      ["gh", "GitHub", username(f.gh) ? `https://github.com/${encodeURIComponent(username(f.gh))}` : ""],
+      ["wc", "WeChat", f.wcl || ""],
+      ["wa", "WhatsApp", username(f.wa) ? `https://wa.me/${encodeURIComponent(username(f.wa).replace(/[^0-9]/g, ""))}` : ""],
+      ["tg", "Telegram", username(f.tg) ? `https://t.me/${encodeURIComponent(username(f.tg))}` : ""],
+      ["x", "X", username(f.x) ? `https://x.com/${encodeURIComponent(username(f.x))}` : ""],
+      ["ig", "Instagram", username(f.ig) ? `https://instagram.com/${encodeURIComponent(username(f.ig))}` : ""],
+      ["fb", "Facebook", username(f.fb) ? `https://facebook.com/${encodeURIComponent(username(f.fb))}` : ""],
+      ["yt", "YouTube", username(f.yt) ? `https://youtube.com/@${encodeURIComponent(username(f.yt))}` : ""],
+    ];
+    const socials = socialLinks.filter(([id, label, url]) => url).map(([id, label, url]) => brandIconHtml(id, label, url, socialSize)).join("");
+    const cta = f.cta && f.ctau ? `<a href="${esc(href(f.ctau))}" style="display:inline-block;background:${a};color:#fff;font:700 12px 'Segoe UI',Arial,sans-serif;padding:8px 14px;border-radius:7px;text-decoration:none">${esc(f.cta)}</a>` : "";
+    const socialRow = socials ? `<table cellpadding="0" cellspacing="0" border="0"><tr>${socials}</tr></table>` : "";
+    const footer = socials || cta ? `<tr><td colspan="2" style="padding-top:14px"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding-left:${f.mode === "none" ? "0" : `${imageSize + 16}px`}\">${socialRow}</td><td align="right">${cta}</td></tr></table></td></tr>` : "";
+    const avatarCell = avatar ? `<td valign="middle" style="padding-right:16px">${avatar}</td>` : "";
+    const topRule = `<tr><td colspan="2"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px"><tr><td width="72" height="4" bgcolor="${a}" style="font-size:0;line-height:0">&nbsp;</td><td height="1" bgcolor="#e2e8f0" style="font-size:0;line-height:0">&nbsp;</td></tr></table></td></tr>`;
+    return `<table width="640" cellpadding="0" cellspacing="0" border="0" role="presentation" style="width:100%;max-width:640px;font-family:'Segoe UI',Arial,Helvetica,sans-serif">${topRule}<tr><td valign="middle" style="padding-right:26px"><table cellpadding="0" cellspacing="0" border="0"><tr>${avatarCell}${identity}</tr></table></td>${contacts ? `<td width="220" valign="middle" style="border-left:3px solid ${a};padding-left:26px"><table cellpadding="0" cellspacing="0" border="0">${contacts}</table></td>` : ""}</tr>${footer}${f.tag ? `<tr><td colspan="2"><div style="font:11px 'Segoe UI',Arial,sans-serif;color:#64748b;margin-top:8px;letter-spacing:.4px">${esc(f.tag)}</div></td></tr>` : ""}</table>`;
   },
-  {
-    id: "accent-bar",
-    name: "Accent bar",
-    purpose: "Business",
-    build: (f) =>
-      wrap(
-        `<table cellpadding="0" cellspacing="0" border="0"><tr><td style="border-left:4px solid ${f.accent};padding-left:12px">${row(esc(f.name), "font-size:16px;font-weight:bold;color:#111")}${row(roleLine(f), "color:#666")}${row(stack(f, "#333"), "margin-top:6px")}</td></tr></table>`,
-      ),
-  },
-  {
-    id: "logo-left",
-    name: "Logo left",
-    purpose: "Company mail",
-    build: (f) =>
-      wrap(
-        `<table cellpadding="0" cellspacing="0" border="0"><tr>${f.logoUrl ? `<td style="padding-right:14px;border-right:1px solid #dddddd;vertical-align:top">${logo(f)}</td>` : ""}<td style="padding-left:${f.logoUrl ? 14 : 0}px;vertical-align:top">${row(esc(f.name), "font-size:15px;font-weight:bold;color:#111")}${row(roleLine(f), "color:#666")}${row(contact(f, f.accent, "<br>"), "margin-top:6px")}</td></tr></table>`,
-      ),
-  },
-  {
-    id: "minimal",
-    name: "Minimal",
-    purpose: "Quick replies",
-    build: (f) =>
-      wrap(
-        `${row(`<b style="color:#111">${esc(f.name)}</b>${f.title ? ` &mdash; ${esc(f.title)}` : ""}`)}${row(contact(f, f.accent), "font-size:12px;margin-top:2px")}`,
-      ),
-  },
-  {
-    id: "banner",
-    name: "Colour banner",
-    purpose: "Sales / marketing",
-    build: (f) =>
-      wrap(
-        `<table cellpadding="0" cellspacing="0" border="0" style="background:${f.accent};border-radius:8px"><tr><td style="padding:14px 18px;color:#ffffff">${row(esc(f.name), "font-size:17px;font-weight:bold;color:#ffffff")}${row(roleLine(f), "color:#ffffff;opacity:.9")}${row(contact(f, "#ffffff"), "margin-top:8px;font-size:12px")}</td></tr></table>`,
-      ),
-  },
-  {
-    id: "academic",
-    name: "Academic",
-    purpose: "Professors / research",
-    build: (f) =>
-      wrap(
-        `${row(esc(f.name), "font-size:16px;font-weight:bold;color:#111")}${row(esc(f.title), "font-style:italic;color:#555")}${row(esc(f.company), "color:#555")}<div style="border-top:1px solid #bbbbbb;margin-top:8px;padding-top:6px;font-size:12px">${contact(f, f.accent, " &nbsp;/&nbsp; ")}</div>`,
-        SERIF,
-      ),
-  },
-  {
-    id: "job-seeker",
-    name: "Job seeker",
-    purpose: "Applications",
-    build: (f) =>
-      wrap(
-        `${row(esc(f.name), "font-size:16px;font-weight:bold;color:#111")}${row(esc(f.tagline || f.title), "color:#555;margin-bottom:8px")}${[f.linkedin && link(url(f.linkedin), "LinkedIn", f.accent, "border:1px solid " + f.accent + ";padding:3px 10px;border-radius:12px;font-size:12px;margin-right:6px;display:inline-block"), f.website && link(url(f.website), "Portfolio", f.accent, "border:1px solid " + f.accent + ";padding:3px 10px;border-radius:12px;font-size:12px;margin-right:6px;display:inline-block"), f.email && link(`mailto:${f.email}`, "Email me", f.accent, "border:1px solid " + f.accent + ";padding:3px 10px;border-radius:12px;font-size:12px;display:inline-block")].filter(Boolean).join("")}${row(esc(f.phone), "margin-top:8px;color:#666;font-size:12px")}`,
-      ),
-  },
-  {
-    id: "startup",
-    name: "Startup",
-    purpose: "Founders / pitches",
-    build: (f) =>
-      wrap(
-        `${row(esc(f.name), "font-size:18px;font-weight:bold;color:#111;letter-spacing:-0.3px")}${row(roleLine(f, " at "), "color:#666")}${row(esc(f.tagline), "font-style:italic;color:#777;margin:6px 0")}${row(btn(f, f.accent), "margin:8px 0")}${row(contact(f, f.accent), "font-size:12px")}`,
-      ),
-  },
-  {
-    id: "sales",
-    name: "Sales CTA",
-    purpose: "Outreach / follow-ups",
-    build: (f) =>
-      wrap(
-        `<table cellpadding="0" cellspacing="0" border="0"><tr><td style="vertical-align:top;padding-right:16px">${row(esc(f.name), "font-size:15px;font-weight:bold;color:#111")}${row(roleLine(f), "color:#666")}${row(f.phone ? link(`tel:${f.phone.replace(/\s/g, "")}`, f.phone, f.accent, "font-size:15px;font-weight:bold") : "", "margin-top:6px")}${row(f.email ? link(`mailto:${f.email}`, f.email, "#333") : "")}</td><td style="vertical-align:middle">${btn(f, f.accent)}</td></tr></table>`,
-      ),
-  },
-  {
-    id: "formal",
-    name: "Formal / legal",
-    purpose: "Legal & corporate",
-    build: (f) =>
-      wrap(
-        `${row(esc(f.name).toUpperCase(), "font-size:14px;letter-spacing:1.5px;color:#111;font-weight:bold")}${row(roleLine(f), "color:#555;margin-top:2px")}${row(stack(f, "#333"), "margin-top:8px;font-size:12px")}${row("This message may contain confidential information intended only for the addressee.", "margin-top:10px;font-size:10px;color:#999;max-width:420px")}`,
-        SERIF,
-      ),
-  },
-  {
-    id: "developer",
-    name: "Developer",
-    purpose: "Tech roles",
-    build: (f) =>
-      wrap(
-        `${row(`<span style="color:${f.accent}">~/</span>${esc(f.name)}`, "font-size:15px;font-weight:bold;color:#111")}${row(`# ${roleLine(f, " @ ")}`, "color:#888")}${row(
-          [
-            f.website && link(url(f.website), "portfolio", f.accent),
-            f.linkedin && link(url(f.linkedin), "linkedin", f.accent),
-            f.email && link(`mailto:${f.email}`, "mail", f.accent),
-          ]
-            .filter(Boolean)
-            .map((x) => `[ ${x} ]`)
-            .join(" "),
-          "margin-top:6px",
-        )}`,
-        MONO,
-      ),
-  },
-  {
-    id: "creative",
-    name: "Creative",
-    purpose: "Design & media",
-    build: (f) =>
-      wrap(
-        `${row(esc(f.name), `font-size:22px;font-weight:bold;color:${f.accent};letter-spacing:-0.5px`)}${row(esc(f.title), "color:#111;font-weight:bold")}<div style="height:3px;width:60px;background:${f.accent};margin:6px 0 8px"></div>${row(esc(f.tagline), "color:#666;font-style:italic;margin-bottom:6px")}${row(contact(f, "#333"), "font-size:12px")}`,
-      ),
-  },
-  {
-    id: "executive",
-    name: "Executive",
-    purpose: "Senior / formal",
-    build: (f) =>
-      wrap(
-        `<table cellpadding="0" cellspacing="0" border="0" style="border-top:2px solid ${f.accent};border-bottom:1px solid #cccccc"><tr><td style="padding:10px 4px 10px 0">${row(esc(f.name), "font-size:16px;font-weight:bold;color:#111")}${row(esc(f.title), `color:${f.accent};font-weight:bold`)}${row(esc(f.company), "color:#666")}${row(contact(f, "#333"), "margin-top:6px;font-size:12px")}</td></tr></table>`,
-        SERIF,
-      ),
-  },
-  {
-    id: "photo",
-    name: "Photo circle",
-    purpose: "Personal brand",
-    build: (f) =>
-      wrap(
-        `<table cellpadding="0" cellspacing="0" border="0"><tr>${f.photoUrl ? `<td style="padding-right:14px;vertical-align:middle">${img(f.photoUrl, 72, "50%")}</td>` : ""}<td style="vertical-align:middle">${row(esc(f.name), "font-size:16px;font-weight:bold;color:#111")}${row(roleLine(f), `color:${f.accent}`)}${row(contact(f, "#555"), "margin-top:4px;font-size:12px")}</td></tr></table>`,
-      ),
-  },
-  {
-    id: "dark-card",
-    name: "Dark card",
-    purpose: "Modern / tech",
-    build: (f) =>
-      wrap(
-        `<table cellpadding="0" cellspacing="0" border="0" style="background:#16181d;border-radius:8px"><tr><td style="padding:14px 18px">${row(esc(f.name), "font-size:16px;font-weight:bold;color:#ffffff")}${row(roleLine(f), `color:${f.accent}`)}${row(contact(f, "#c9ccd4"), "margin-top:8px;font-size:12px")}</td></tr></table>`,
-      ),
-  },
-  {
-    id: "friendly",
-    name: "Friendly",
-    purpose: "Support / warm tone",
-    build: (f) =>
-      wrap(
-        `${row("Warm regards,", "color:#666;margin-bottom:4px")}${row(esc(f.name), `font-size:16px;font-weight:bold;color:${f.accent}`)}${row(roleLine(f), "color:#666")}${row(esc(f.tagline), "color:#888;font-style:italic;margin-top:4px")}${row(contact(f, "#555"), "margin-top:6px;font-size:12px")}`,
-      ),
-  },
-];
+}];
+export const adaptSignatureFields = (fields = {}) => ({
+  ...fields,
+  org: fields.org || fields.company || "",
+  field: fields.field || fields.tagline || "",
+  web: fields.web || fields.website || "",
+  li: fields.li || fields.linkedin || "",
+  cta: fields.cta || fields.ctaText || "",
+  ctau: fields.ctau || fields.ctaUrl || "",
+  photo: fields.photo || fields.photoUrl || "",
+  accent: fields.accent || "#2563eb",
+  mode: fields.mode || (fields.photo || fields.photoUrl ? "photo" : "logo"),
+});
+export const adaptSignature = (signature) => {
+  const fields = adaptSignatureFields(signature?.fields || {});
+  if (signature?.name && !fields.name) fields.name = signature.name;
+  return { ...signature, fields, templateId: "hamim-signature", html: SIGNATURES[0].build(fields), css: "" };
+};

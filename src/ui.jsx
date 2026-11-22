@@ -45,7 +45,7 @@ export const Badge = ({ status }) => <span className={`badge ${status}`}>{status
 export const Toggle = ({ checked, onChange, label }) => (
   <label className="toggle"><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} /><span className="track" /><span>{label}</span></label>
 );
-export const Field = ({ label, hint, children }) => (<label className="field"><span className="lbl">{label}</span>{children}{hint && <span className="hint">{hint}</span>}</label>);
+export const Field = ({ label, hint, children }) => (<div className="field"><span className="lbl">{label}</span>{children}{hint && <span className="hint">{hint}</span>}</div>);
 export const Empty = ({ icon, title, children }) => (<div className="empty">{icon}<h3>{title}</h3><p>{children}</p></div>);
 
 export function useLoad(fn, deps = []) {

@@ -6,12 +6,14 @@
 }
 .rte-bar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 2px;
   padding: 6px;
   border-bottom: 1px solid var(--border, #d6dae3);
   background: rgba(127, 127, 127, 0.06);
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .rte-btn {
   display: inline-flex;
@@ -52,6 +54,9 @@
   border-radius: 6px;
   font-size: 13px;
   padding: 0 6px;
+}
+.rte-size {
+  min-width: 72px;
 }
 .rte-sep {
   width: 1px;
@@ -124,6 +129,33 @@
   margin-top: 10px;
   display: grid;
   gap: 12px;
+}
+.sig-intro {
+  display: grid;
+  gap: 3px;
+}
+.sig-colors {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 3px 0;
+}
+.sig-colors button {
+  width: 22px;
+  height: 22px;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--border, #d6dae3);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.sig-colors input[type="color"] {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
 }
 .sig-gallery {
   display: grid;
@@ -200,13 +232,65 @@
   font-size: 13px;
 }
 
-.img-field { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.img-thumb { max-height: 40px; max-width: 90px; border-radius: 6px; border: 1px solid var(--border, #d6dae3); background: #fff; padding: 2px; }
-.sig-modebar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.sig-dark { background: #15171c; color: #e8e9ed; border-color: #3b3f4b; }
-.sig-tpl-prev.dk { background: #15171c; color: #e8e9ed; }
-.sig-cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); margin-top: 14px; }
-.sig-card { padding: 14px; display: grid; gap: 10px; align-content: start; }
-.sig-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.sig-default { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: #4f46e5; background: rgba(79, 70, 229, .12); padding: 2px 8px; border-radius: 10px; }
-.sig-card .sig-preview { margin-top: 0; }
+.img-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.img-thumb {
+  max-height: 40px;
+  max-width: 90px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #d6dae3);
+  background: #fff;
+  padding: 2px;
+}
+.sig-modebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sig-dark {
+  background: #15171c;
+  color: #e8e9ed;
+  border-color: #3b3f4b;
+}
+.sig-tpl-prev.dk {
+  background: #15171c;
+  color: #e8e9ed;
+}
+.sig-cards {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  margin-top: 14px;
+}
+.sig-card {
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+.sig-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sig-default {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4f46e5;
+  background: rgba(79, 70, 229, 0.12);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.sig-card .sig-preview {
+  margin-top: 0;
+}

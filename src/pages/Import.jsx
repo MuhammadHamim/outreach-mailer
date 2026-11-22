@@ -5,6 +5,7 @@ import { FileSpreadsheet, ArrowRight, ArrowLeft, Check } from "lucide-react";
 import { api } from "../api.js";
 import { Field, useLoad, useToast } from "../ui.jsx";
 import DuplicatesPanel from "../DuplicatesPanel.jsx";
+import SignaturePicker from "../SignaturePicker";
 const guess = (headers, re) => headers.find((h) => re.test(h)) || "";
 const NONE = "";
 
@@ -34,6 +35,7 @@ export default function ImportPage() {
     );
   const [batchName, setBatchName] = useState(""),
     [attach, setAttach] = useState(new Set());
+  const [signature, setSignature] = useState(null);
   const input = useRef();
   const nav = useNavigate();
   const toast = useToast();
@@ -174,7 +176,12 @@ export default function ImportPage() {
       const r = await api.post("/api/batches", {
         name: batchName,
         attachments: [...attach],
-        emails: valid,
+        emails: valid.map((e) => ({
+          ...e,
+          html: signature?.html
+            ? `${e.body.split("\n").map((line) => `<div>${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") || "&nbsp;"}</div>`).join("")}<br>${signature.html}`
+            : "",
+        })),
       });
       toast(`Imported ${r.created} emails`);
       nav("/emails");
@@ -393,6 +400,7 @@ export default function ImportPage() {
 
       {step === 3 && (
         <section className="card pad">
+          <SignaturePicker sig={signature} onChange={setSignature} />
           <p>
             <strong>{valid.length}</strong> emails ready
             {all.length - valid.length > 0 && (

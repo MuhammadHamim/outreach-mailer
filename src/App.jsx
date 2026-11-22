@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
-import { LayoutDashboard, FileUp, Mail, Paperclip, FileText, Settings as Cog, LogOut, Send } from 'lucide-react';
+import { LayoutDashboard, FileUp, Mail, Paperclip, FileText, Settings as Cog, LogOut, Send, PenTool } from 'lucide-react';
 import { api } from './api.js';
 import Credit from './Credit.jsx';
 import { ThemeSwitch } from './theme.jsx';
@@ -12,10 +12,11 @@ import Emails from './pages/Emails.jsx';
 import Documents from './pages/Documents.jsx';
 import Resumes from './pages/Resumes.jsx';
 import SettingsPage from './pages/Settings.jsx';
+import Signatures from './pages/Signatures.jsx';
 
 const NAV = [
   ['/', 'Dashboard', LayoutDashboard], ['/import', 'Import', FileUp], ['/emails', 'Emails', Mail],
-  ['/documents', 'Documents', Paperclip], ['/resumes', 'Resumes', FileText], ['/settings', 'Settings', Cog],
+  ['/documents', 'Documents', Paperclip], ['/resumes', 'Resumes', FileText], ['/signatures', 'Signatures', PenTool], ['/settings', 'Settings', Cog],
 ];
 
 export default function App() {
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="/emails" element={<Emails />} />
           <Route path="/documents" element={<Documents />} />
           <Route path="/resumes" element={<Resumes />} />
+          <Route path="/signatures" element={<Signatures />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

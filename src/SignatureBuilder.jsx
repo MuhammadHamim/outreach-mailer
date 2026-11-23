@@ -82,6 +82,72 @@ const shrink = (file, max, square) =>
     img.onerror = () => rej(new Error("Not a valid image"));
     img.src = u;
   });
+// ---- QR reading helpers: crops + uniform scaling + blur so round-dot WeChat QR codes decode ----
+const tick = () => new Promise((r) => setTimeout(r, 0));
+function blurGray(src, w, h, r) {
+  // separable box blur on a Uint8ClampedArray luminance plane
+  const tmp = new Float32Array(w * h), out = new Uint8ClampedArray(w * h), k = 2 * r + 1;
+  for (let y = 0; y < h; y++) {
+    let acc = 0; const row = y * w;
+    for (let x = -r; x <= r; x++) acc += src[row + Math.min(w - 1, Math.max(0, x))];
+    for (let x = 0; x < w; x++) {
+      tmp[row + x] = acc / k;
+      acc += src[row + Math.min(w - 1, x + r + 1)] - src[row + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let acc = 0;
+    for (let y = -r; y <= r; y++) acc += tmp[Math.min(h - 1, Math.max(0, y)) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = acc / k;
+      acc += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+    }
+  }
+  return out;
+}
+function grayToRgba(g, w, h, stretch) {
+  let lo = 255, hi = 0;
+  if (stretch) for (let i = 0; i < g.length; i++) { if (g[i] < lo) lo = g[i]; if (g[i] > hi) hi = g[i]; }
+  const span = Math.max(1, hi - lo), rgba = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < g.length; i++) {
+    const v = stretch ? ((g[i] - lo) * 255) / span : g[i];
+    rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = v; rgba[i * 4 + 3] = 255;
+  }
+  return rgba;
+}
+async function decodeQrImage(image) {
+  const nw = image.naturalWidth, nh = image.naturalHeight, side = Math.min(nw, nh);
+  // crops [sx, sy, sw, sh]: whole picture first, then square windows sliding along the long edge
+  const crops = [[0, 0, nw, nh]];
+  const long = Math.max(nw, nh), step = Math.max(1, Math.round(side * 0.4));
+  for (let p = 0; p + side <= long + 1; p += step) crops.push(nw >= nh ? [p, 0, side, side] : [0, p, side, side]);
+  const last = long - side; if (last > 0 && (last % step)) crops.push(nw >= nh ? [last, 0, side, side] : [0, last, side, side]);
+  const blurs = [0, 2, 4], t0 = Date.now();
+  for (const [ci, [sx, sy, sw, sh]] of crops.entries()) {
+    for (const target of ci === 0 ? [1000, 1600] : [1000]) {
+      if (Date.now() - t0 > 8000) return null;   // give up after ~8 s so the button never hangs
+      const k = target / Math.max(sw, sh);           // ONE uniform scale: never distorts the picture
+      const w = Math.max(60, Math.round(sw * k)), h = Math.max(60, Math.round(sh * k));
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      const x = c.getContext("2d", { willReadFrequently: true });
+      x.imageSmoothingQuality = "high"; x.fillStyle = "#fff"; x.fillRect(0, 0, w, h);
+      x.drawImage(image, sx, sy, sw, sh, 0, 0, w, h);
+      const img = x.getImageData(0, 0, w, h), px = img.data, lum = new Uint8ClampedArray(w * h);
+      for (let i = 0; i < lum.length; i++) lum[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114) | 0;
+      for (const b of blurs) {
+        // blur 0 = untouched pixels; blur > 0 merges round "dot" modules (new WeChat style) into solid squares
+        const data = b ? grayToRgba(blurGray(lum, w, h, b), w, h, true) : grayToRgba(lum, w, h, true);
+        const r = jsQR(data, w, h, { inversionAttempts: "attemptBoth" });
+        if (r?.data) return r.data;
+        await tick();
+      }
+      if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+        try { const d = await new window.BarcodeDetector({ formats: ["qr_code"] }).detect(c); if (d[0]?.rawValue) return d[0].rawValue; } catch { /* keep going */ }
+      }
+    }
+  }
+  return null;
+}
 function WeChatQrField({ value, onChange }) {
   const ref = useRef(), toast = useToast(), [busy, setBusy] = useState(false);
   const read = async (file) => {
@@ -95,32 +161,8 @@ function WeChatQrField({ value, onChange }) {
         image.onerror = () => reject(new Error("Could not read that image"));
         image.src = url;
       });
-      let result = null;
-      const scales = [1, 1.5, 2, 0.75];
-      for (const multiplier of scales) {
-        if (result) break;
-        const width = Math.min(2400, Math.round(image.naturalWidth * multiplier));
-        const height = Math.min(2400, Math.round(image.naturalHeight * multiplier));
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const context = canvas.getContext("2d", { willReadFrequently: true });
-        context.fillStyle = "#fff";
-        context.fillRect(0, 0, width, height);
-        context.drawImage(image, 0, 0, width, height);
-        const pixels = context.getImageData(0, 0, width, height);
-        result = jsQR(pixels.data, width, height, { inversionAttempts: "attemptBoth" });
-
-        if (!result && "BarcodeDetector" in window) {
-          try {
-            const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
-            const detected = await detector.detect(canvas);
-            if (detected[0]?.rawValue) result = { data: detected[0].rawValue };
-          } catch {
-            // jsQR remains the fallback for this image.
-          }
-        }
-      }
+      const raw = await decodeQrImage(image);
+      const result = raw ? { data: raw } : null;
       URL.revokeObjectURL(url);
       if (!result?.data) return toast("No QR code found. Try a sharper, tightly cropped screenshot.", "err");
       const qrLink = result.data.trim();

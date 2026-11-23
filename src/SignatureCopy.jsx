@@ -89,7 +89,7 @@ export default function SignatureCopy({ signature }) {
         </button>
       </div>
       {/* hidden rendered copy used for the selection-based fallback */}
-      <div ref={box} style={{ position: "fixed", left: -9999, top: 0, width: 700 }} aria-hidden="true" />
+      <div ref={box} style={{ position: "fixed", left: -9999, top: 0, width: 700, background: "#fff", color: "#1e293b", colorScheme: "light" }} aria-hidden="true" />
       {help && (
         <div className="sig-help">
           <p>

@@ -96,7 +96,7 @@ export const SIGNATURES = [{
       const lead = textOnly
         ? `<td valign="middle" style="${FONT}font-size:11px;font-weight:700;color:${a};padding:4px 12px 4px 0;white-space:nowrap;">${TEXT_LABELS[icon]}</td>`
         : `<td valign="middle" style="padding:4px 10px 4px 0;">${img(icon, 18)}</td>`;
-      return `<tr>${lead}<td valign="middle" style="${FONT}font-size:13px;color:#1e293b;padding:4px 0;">${url ? `<a href="${esc(url)}" style="color:#1e293b;text-decoration:none;cursor:pointer;">${esc(text)}</a>` : esc(text)}</td></tr>`;
+      return `<tr>${lead}<td valign="middle" style="${FONT}font-size:13px;color:#1e293b;padding:4px 0;">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" style="color:#1e293b;text-decoration:none;cursor:pointer;">${esc(text)}</a>` : esc(text)}</td></tr>`;
     };
     let rows = "";
     if (f.email) rows += row("mail", f.email, `mailto:${f.email}`);
@@ -113,7 +113,7 @@ export const SIGNATURES = [{
       const inner = textOnly
         ? `<span style="${FONT}font-size:12px;font-weight:700;color:${a};">${ICON_LABELS[k]}</span>`
         : img(k, soc);
-      s += `<td valign="middle" style="padding-right:${textOnly ? 14 : 10}px;">${u ? `<a href="${esc(u)}" style="text-decoration:none;cursor:pointer;">${inner}</a>` : inner}</td>`;
+      s += `<td valign="middle" style="padding-right:${textOnly ? 14 : 10}px;">${u ? `<a href="${esc(u)}" target="_blank" rel="noopener" title="${esc(ICON_LABELS[k])}" style="text-decoration:none;cursor:pointer;display:inline-block;">${inner}</a>` : inner}</td>`;
     });
     const cta = f.cta && f.ctau ? `<a href="${esc(href(f.ctau))}" style="display:inline-block;background:${a};color:#ffffff;${FONT}font-size:12px;font-weight:700;letter-spacing:0.3px;padding:9px 18px;border-radius:8px;text-decoration:none;cursor:pointer;">${esc(f.cta)}</a>` : "";
 
@@ -129,13 +129,17 @@ export const SIGNATURES = [{
     // the line goes on TOP, because the signature is the last thing in the email
     const bar = `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;"><tr><td width="72" height="4" bgcolor="${a}" style="font-size:0;line-height:0;">&nbsp;</td><td height="1" bgcolor="#e2e8f0" style="font-size:0;line-height:0;">&nbsp;</td></tr></table>`;
 
-    return `<table cellpadding="0" cellspacing="0" border="0" style="${FONT}max-width:640px;">`
+    // Explicit white card (bgcolor attribute + inline style, no transparency). Webmail dark modes (QQ, 163, Outlook.com)
+    // paint their own dark background behind a transparent signature, which made the dark text unreadable.
+    return `<table cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="${FONT}max-width:640px;background-color:#ffffff;color:#1e293b;color-scheme:light only;"><tr><td bgcolor="#ffffff" style="background-color:#ffffff;padding:4px 12px 12px 4px;">`
+      + `<table cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="${FONT}max-width:640px;background-color:#ffffff;">`
       + `<tr><td colspan="2">${bar}</td></tr>`
       + `<tr><td valign="middle" style="padding-right:26px;"><table cellpadding="0" cellspacing="0" border="0"><tr>${pic}${who}</tr></table>${under}</td>`
       + (rows ? `<td valign="middle" style="border-left:3px solid ${a};padding-left:26px;"><table cellpadding="0" cellspacing="0" border="0">${rows}</table></td>` : "")
       + `</tr>`
       + (f.tag ? `<tr><td colspan="2"><div style="${FONT}font-size:11px;color:#64748b;margin-top:12px;letter-spacing:0.4px;">${esc(f.tag)}</div></td></tr>` : "")
-      + `</table>`;
+      + `</table>`
+      + `</td></tr></table>`;
   },
 }];
 

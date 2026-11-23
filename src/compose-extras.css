@@ -294,3 +294,14 @@
 .sig-card .sig-preview {
   margin-top: 0;
 }
+
+/* ---- signature copy panel + reply composer ---- */
+.sig-copy { margin-top: 10px; }
+.sig-copy-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.sig-help { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; font-size: 13px; line-height: 1.5; }
+.sig-help p { margin: 0 0 8px; }
+.sig-help-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 8px; }
+.sig-help kbd { padding: 1px 5px; border: 1px solid var(--border, #cbd5e1); border-radius: 4px; font-size: 12px; }
+.reply-composer { display: flex; flex-direction: column; gap: 8px; }
+.reply-composer .rte-area { min-height: 140px; }
+.sig-preview a, .sig-preview a img, .sig-preview a span { cursor: pointer; }

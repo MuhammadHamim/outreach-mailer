@@ -4,6 +4,7 @@ import { api } from "../api";
 import { useToast } from "../ui";
 import SignatureBuilder from "../SignatureBuilder";
 import { adaptSignature } from "../signatureTemplates";
+import SignatureCopy from "../SignatureCopy";
 import "../compose-extras.css";
 export default function Signatures() {
   const toast = useToast();
@@ -112,6 +113,7 @@ export default function Signatures() {
                     <Trash2 size={14} /> Delete
                   </button>
                 </div>
+                <SignatureCopy signature={adapted} />
               </div>
             );
           })

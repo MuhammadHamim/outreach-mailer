@@ -87,22 +87,7 @@ export default function ComposeModal({ docs = [], onClose, onDone }) {
   const go = async () => {
     setBusy(true);
     try {
-      let signatureHtml = sig?.html || "";
-      const photoMatches = [...signatureHtml.matchAll(/<img[^>]+src="(\/api\/documents\/[^"/]+\/download)"/g)];
-      for (const match of photoMatches) {
-        try {
-          const response = await fetch(match[1], { credentials: "same-origin" });
-          if (!response.ok) continue;
-          const blob = await response.blob();
-          const dataUrl = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(blob);
-          });
-          signatureHtml = signatureHtml.split(match[1]).join(dataUrl);
-        } catch {}
-      }
+      const signatureHtml = sig?.html || ""; // the server turns pictures into inline cid: images
       const html = `${bodyHtml}${signatureHtml ? `<br>${signatureHtml}` : ""}`; // NEW
       await api.post("/api/emails", {
         to,

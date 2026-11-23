@@ -29,6 +29,7 @@ import {
   useToast,
 } from "../ui.jsx";
 import ComposeModal from "../ComposeModal.jsx";
+import ReplyComposer from "../ReplyComposer.jsx";
 
 const STATUSES = [
   "draft",
@@ -1017,10 +1018,8 @@ function FollowUpModal({ rows, docs, onClose, onCreate }) {
   );
 }
 
-function Thread({ email, tz, onFollowUp, onChanged }) {
+function Thread({ email, tz, onFollowUp, onChanged, docs = [] }) {
   const [data, setData] = useState(null),
-    [text, setText] = useState(""),
-    [busy, setBusy] = useState(false),
     [open, setOpen] = useState({});
   const toast = useToast();
   const load = () =>
@@ -1036,19 +1035,6 @@ function Thread({ email, tz, onFollowUp, onChanged }) {
         .then(onChanged)
         .catch(() => {});
   }, [email.id]); // eslint-disable-line
-  const send = async () => {
-    setBusy(true);
-    try {
-      await api.post(`/api/emails/${email.id}/reply`, { text });
-      setText("");
-      toast("Reply sent");
-      await load();
-      onChanged();
-    } catch (e) {
-      toast(e.message, "err");
-    }
-    setBusy(false);
-  };
   if (!data) return <div className="spinner" />;
   const hasReply = data.items.some((i) => i.type === "in");
   return (
@@ -1109,23 +1095,14 @@ function Thread({ email, tz, onFollowUp, onChanged }) {
         </div>
       )}
       {["sent", "replied"].includes(email.status) && (
-        <div className="composer">
-          <textarea
-            rows={4}
-            placeholder="Write a reply… (it is sent in the same conversation)"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          />
-          <div className="btn-row">
-            <button
-              className="btn primary"
-              disabled={busy || !text.trim()}
-              onClick={send}
-            >
-              <CornerUpLeft size={16} /> {busy ? "Sending…" : "Send reply"}
-            </button>
-          </div>
-        </div>
+        <ReplyComposer
+          emailId={email.id}
+          docs={docs}
+          onSent={async () => {
+            await load();
+            onChanged();
+          }}
+        />
       )}
     </div>
   );
@@ -1336,6 +1313,7 @@ function EditModal({
         <Thread
           email={email}
           tz={tz}
+          docs={docs}
           onFollowUp={onFollowUp}
           onChanged={onChanged}
         />

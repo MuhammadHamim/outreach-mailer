@@ -28,6 +28,7 @@ const TEXT = [
   ["cta", "Button text (optional)"],
   ["ctau", "Button link"],
   ["tag", "Small note (optional)"],
+  ["iconBase", "Icon base URL (optional: online folder holding the icon PNGs, helps Gmail show icons)"],
 ];
 const clean = (o = {}) =>
   Object.fromEntries(
@@ -219,6 +220,8 @@ export default function SignatureBuilder({ initial, onSaved, onCancel }) {
     mode: "logo",
     imageSize: 88,
     socialIconSize: 28,
+    iconStyle: "icons",
+    logoLetter: "",
     ...adaptSignatureFields(initial?.fields || {}),
   });
   const [busy, setBusy] = useState(false);
@@ -313,6 +316,38 @@ export default function SignatureBuilder({ initial, onSaved, onCancel }) {
               key={k}
               className={(fields.mode || "logo") === k ? "on" : ""}
               onClick={() => set("mode", k)}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+      {fields.mode === "logo" && (
+        <Field
+          label="Logo letter"
+          hint="Leave empty to use the first letter of your name. You can type 1–2 characters."
+        >
+          <input
+            value={fields.logoLetter || ""}
+            maxLength={2}
+            onChange={(e) => set("logoLetter", e.target.value)}
+            placeholder={(fields.name || "H").trim().charAt(0).toUpperCase() || "H"}
+            style={{ maxWidth: 90 }}
+          />
+        </Field>
+      )}
+      <div className="sig-modebar">
+        <strong>Contact &amp; social links</strong>
+        <div className="seg">
+          {[
+            ["icons", "Icons"],
+            ["text", "Text only"],
+          ].map(([k, l]) => (
+            <button
+              type="button"
+              key={k}
+              className={(fields.iconStyle || "icons") === k ? "on" : ""}
+              onClick={() => set("iconStyle", k)}
             >
               {l}
             </button>

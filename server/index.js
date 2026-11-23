@@ -5,7 +5,7 @@ import jwt from "jsonwebtoken";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { timingSafeEqual, randomBytes } from "node:crypto";
+import { timingSafeEqual, randomBytes, createHash } from "node:crypto";
 import sanitizeHtml from "sanitize-html";
 import { convert } from "html-to-text";
 import * as db from "./db.js";
@@ -360,6 +360,9 @@ app.post(
       createdAt,
       count: rows.length,
     });
+    const htmls = await Promise.all(
+      rows.map((r) => (r.html ? prepareHtml(r.html) : "")),
+    );
     await db.setMany(
       "emails",
       rows.map((r, i) => [
@@ -371,7 +374,7 @@ app.post(
           toName: r.toName || "",
           subject: r.subject.trim(),
           body: r.body,
-          html: r.html ? cleanHtml(r.html) : "",
+          html: htmls[i],
           attachments,
           tags: [],
           status: "draft",
@@ -521,16 +524,57 @@ const cleanHtml = (h) =>
         "bgcolor",
       ],
     },
-    allowedSchemes: ["http", "https", "mailto", "tel", "data"],
+    allowedSchemes: ["http", "https", "mailto", "tel", "data", "cid"],
   });
 const htmlToPlain = (h) =>
   convert(h, {
     wordwrap: false,
     selectors: [
       { selector: "img", format: "skip" },
+      { selector: "td[bgcolor]", format: "skip" },
+      { selector: "table", format: "block" },
+      { selector: "tr", format: "block" },
+      { selector: "td", format: "block" },
       { selector: "a", options: { hideLinkHrefIfSameAsText: true } },
     ],
   });
+
+// Each distinct picture is stored ONCE (collection "images"); emails keep a short cid:sig-<hash>
+// reference instead of a 10-50 KB base64 blob. mailer.js turns the cid: references back into
+// real inline attachments when the email is sent, so Gmail/Outlook/QQ/163 show the icons.
+const replaceAsync = async (str, re, fn) => {
+  const parts = [], jobs = [];
+  let last = 0, m;
+  re.lastIndex = 0;
+  while ((m = re.exec(str))) {
+    jobs.push(fn(...m));
+    parts.push(str.slice(last, m.index));
+    last = m.index + m[0].length;
+  }
+  parts.push(str.slice(last));
+  const done = await Promise.all(jobs);
+  return parts.reduce((out, p, i) => out + p + (done[i] ?? ""), "");
+};
+const IMG_DATA = /src=(["'])data:(image\/(?:png|jpe?g|gif|webp));base64,([A-Za-z0-9+/=]+)\1/gi;
+const LOCAL_DOC = /src=(["'])\/api\/documents\/([^"'/]+)\/download\1/gi;
+const prepareHtml = async (raw) => {
+  let h = String(raw || "");
+  h = await replaceAsync(h, LOCAL_DOC, async (all, q, id) => {
+    try {
+      const { meta, buffer } = await loadDoc(id);
+      return `src=${q}data:${meta.mime || "image/jpeg"};base64,${buffer.toString("base64")}${q}`;
+    } catch {
+      return all;
+    }
+  });
+  h = await replaceAsync(h, IMG_DATA, async (all, q, mime, data) => {
+    if (data.length > 3_000_000) return all;
+    const key = `sig-${createHash("sha1").update(data).digest("hex").slice(0, 16)}`;
+    if (!(await db.get("images", key))) await db.set("images", key, { mime, data });
+    return `src=${q}cid:${key}${q}`;
+  });
+  return cleanHtml(h);
+};
 
 app.post(
   "/api/emails",
@@ -550,7 +594,7 @@ app.post(
     if (!/^\S+@\S+\.\S+$/.test(addr))
       throw new Error("Enter a valid recipient email address");
     if (!String(subject || "").trim()) throw new Error("Subject is required");
-    const safeHtml = html ? cleanHtml(html) : "";
+    const safeHtml = html ? await prepareHtml(html) : "";
     const text = safeHtml ? htmlToPlain(safeHtml) : String(body || "");
     if (!text.trim()) throw new Error("Write a message first");
     const now = Date.now(),
@@ -667,7 +711,8 @@ app.patch(
         "This email was already sent and can no longer be edited",
       );
     Object.assign(patch, isLocked(e) ? {} : pick(req.body));
-    if (patch.body !== undefined) patch.html = ""; // a plain-text edit replaces the rich version
+    // only a real text change replaces the rich version; saving an untouched email keeps its formatting
+    if (patch.body !== undefined && patch.body !== e.body) patch.html = "";
     if (patch.to && !/^\S+@\S+\.\S+$/.test(patch.to))
       throw new Error("Invalid email address");
     if ("tags" in req.body) patch.tags = normTags(req.body.tags);
@@ -807,8 +852,10 @@ app.post(
   wrap(async (req, res) => {
     const e = await db.get("emails", req.params.id);
     if (!e) throw new Error("Not found");
-    const text = String(req.body.text || "").trim();
-    if (!text) throw new Error("Write your reply first");
+    const typed = String(req.body.text || "").trim();
+    if (!typed) throw new Error("Write your reply first");
+    const safeHtml = req.body.html ? await prepareHtml(req.body.html) : "";
+    const text = safeHtml ? htmlToPlain(safeHtml).trim() || typed : typed;
     if (!["sent", "replied"].includes(e.status))
       throw new Error("You can reply once the email has been sent");
     const kids = (await db.list("emails")).filter(
@@ -832,6 +879,7 @@ app.post(
       to,
       subject,
       body: text,
+      html: safeHtml || undefined,
       attachments,
       inReplyTo: lastIn?.messageId || refs.at(-1),
       references: refs.join(" "),
@@ -843,7 +891,8 @@ app.post(
       to,
       toName: e.toName,
       subject,
-      body: text,
+      body: typed,
+      html: safeHtml,
       attachments,
       status: "sent",
       kind: "reply",

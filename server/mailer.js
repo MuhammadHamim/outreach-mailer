@@ -255,6 +255,25 @@ export async function loadDoc(id) {
 }
 export const dropFromCache = (id) => cache.delete(id);
 
+const EXT = { "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp" };
+// cid:sig-<hash> references in the HTML become real inline (multipart/related) images
+async function inlineImages(html) {
+  const out = [];
+  for (const ref of new Set(String(html || "").match(/cid:sig-[a-f0-9]{16}/g) || [])) {
+    const key = ref.slice(4),
+      img = await db.get("images", key);
+    if (!img) continue;
+    out.push({
+      filename: `${key}.${EXT[img.mime] || "png"}`,
+      content: Buffer.from(img.data, "base64"),
+      contentType: img.mime,
+      cid: key,
+      contentDisposition: "inline",
+    });
+  }
+  return out;
+}
+
 export async function sendEmail({
   to,
   subject,
@@ -275,6 +294,7 @@ export async function sendEmail({
     const { meta, buffer } = await loadDoc(id);
     files.push({ filename: meta.name, content: buffer });
   }
+  const inline = html ? await inlineImages(html) : [];
   try {
     const info = await getTransport(a).sendMail({
       from: { name: a.name, address: a.email || "test@example.com" },
@@ -282,7 +302,7 @@ export async function sendEmail({
       subject,
       text: body,
       ...(html ? { html } : {}),
-      attachments: files,
+      attachments: [...files, ...inline],
       ...(a.replyTo ? { replyTo: a.replyTo } : {}),
       ...(inReplyTo ? { inReplyTo, references: references || inReplyTo } : {}),
     });

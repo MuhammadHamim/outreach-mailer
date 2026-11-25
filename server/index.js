@@ -576,6 +576,32 @@ const prepareHtml = async (raw) => {
   return cleanHtml(h);
 };
 
+// turn cid:sig-... images back into data URIs so the app can display stored HTML
+const cidToData = (h) =>
+  replaceAsync(
+    String(h || ""),
+    /src=(["'])cid:(sig-[a-f0-9]{16})\1/g,
+    async (all, q, key) => {
+      const img = await db.get("images", key);
+      return img ? `src=${q}data:${img.mime};base64,${img.data}${q}` : all;
+    },
+  );
+
+const escHtml = (s) =>
+  String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const textToHtml = (t) => `<div>${escHtml(t).replace(/\n/g, "<br>")}</div>`;
+const QUOTE_AT = /\n\n\nOn [^\n]+ wrote:\n/;
+// follow-up HTML = message + signature + (quoted original)
+const buildFollowHtml = async (text, sigHtml) => {
+  if (!sigHtml) return "";
+  const m = QUOTE_AT.exec(text);
+  const head = m ? text.slice(0, m.index) : text;
+  const tail = m ? text.slice(m.index).trim() : "";
+  return prepareHtml(
+    `${textToHtml(head)}<br>${sigHtml}${tail ? `<br><br>${textToHtml(tail)}` : ""}`,
+  );
+};
+
 app.post(
   "/api/emails",
   wrap(async (req, res) => {
@@ -712,7 +738,8 @@ app.patch(
       );
     Object.assign(patch, isLocked(e) ? {} : pick(req.body));
     // only a real text change replaces the rich version; saving an untouched email keeps its formatting
-    if (patch.body !== undefined && patch.body !== e.body) patch.html = "";
+    if (patch.body !== undefined && patch.body !== e.body)
+      patch.html = e.sigHtml ? await buildFollowHtml(patch.body, e.sigHtml) : "";
     if (patch.to && !/^\S+@\S+\.\S+$/.test(patch.to))
       throw new Error("Invalid email address");
     if ("tags" in req.body) patch.tags = normTags(req.body.tags);
@@ -793,6 +820,8 @@ app.get(
     if (!e) throw new Error("Not found");
     const kids = (await db.list("emails")).filter((x) => x.parentId === e.id);
     const replies = await db.listWhere("replies", "emailId", e.id);
+    const htmlOf = {};
+    for (const m of [e, ...kids]) htmlOf[m.id] = await cidToData(m.html);
     const items = [
       {
         type: "out",
@@ -802,6 +831,7 @@ app.get(
         status: e.status,
         subject: e.subject,
         text: e.body,
+        html: htmlOf[e.id],
         attachments: e.attachments?.length || 0,
       },
       ...kids.map((c) => ({
@@ -812,6 +842,7 @@ app.get(
         status: c.status,
         subject: c.subject,
         text: c.body,
+        html: htmlOf[c.id],
         error: c.error,
       })),
       ...replies.map((r) => ({
@@ -917,6 +948,7 @@ app.post(
       subject = "",
       attachments = [],
       quote = true,
+      sigHtml = "",
     } = req.body || {};
     if (!String(body).trim())
       throw new Error("Write the follow-up message first");
@@ -934,6 +966,7 @@ app.post(
     const me = getAccount().name || "me",
       now = Date.now(),
       made = [];
+    const sigSafe = sigHtml ? await prepareHtml(sigHtml) : "";
     for (const r of rows) {
       const kids = all
         .filter((x) => x.parentId === r.id && x.messageId)
@@ -951,6 +984,7 @@ app.post(
             .split("\n")
             .map((l) => `> ${l}`)
             .join("\n");
+      const html = await buildFollowHtml(text, sigSafe);
       const sub =
         String(subject).trim() ||
         (/^re:/i.test(r.subject) ? r.subject : `Re: ${r.subject}`);
@@ -963,6 +997,8 @@ app.post(
         toName: r.toName,
         subject: sub,
         body: text,
+        html,
+        sigHtml: sigSafe,
         attachments,
         status: "draft",
         kind: "followup",

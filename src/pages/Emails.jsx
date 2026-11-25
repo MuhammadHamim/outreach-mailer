@@ -30,6 +30,7 @@ import {
 } from "../ui.jsx";
 import ComposeModal from "../ComposeModal.jsx";
 import ReplyComposer from "../ReplyComposer.jsx";
+import SignaturePicker from "../SignaturePicker.jsx";
 
 const STATUSES = [
   "draft",
@@ -950,7 +951,8 @@ const FOLLOW_TXT =
 function FollowUpModal({ rows, docs, onClose, onCreate }) {
   const [body, setBody] = useState(FOLLOW_TXT),
     [quote, setQuote] = useState(true),
-    [att, setAtt] = useState(new Set());
+    [att, setAtt] = useState(new Set()),
+    [sig, setSig] = useState(null);
   return (
     <Modal
       title={`Follow up with ${rows.length} ${rows.length === 1 ? "person" : "people"}`}
@@ -964,7 +966,9 @@ function FollowUpModal({ rows, docs, onClose, onCreate }) {
           <button
             className="btn primary"
             disabled={!rows.length || !body.trim()}
-            onClick={() => onCreate({ body, quote, attachments: [...att] })}
+            onClick={() =>
+              onCreate({ body, quote, attachments: [...att], sigHtml: sig?.html || "" })
+            }
           >
             <CornerUpLeft size={16} /> Create {rows.length} draft
             {rows.length === 1 ? "" : "s"}
@@ -990,6 +994,7 @@ function FollowUpModal({ rows, docs, onClose, onCreate }) {
         onChange={setQuote}
         label="Quote my original email below the message"
       />
+      <SignaturePicker sig={sig} onChange={setSig} />
       {docs.length > 0 && (
         <>
           <span className="lbl">Attach again (optional)</span>
@@ -1060,9 +1065,24 @@ function Thread({ email, tz, onFollowUp, onChanged, docs = [] }) {
             </span>
           </div>
           <div className="bsub small muted">{i.subject}</div>
-          <div className="btext">
-            {i.text || <span className="muted">(empty)</span>}
-          </div>
+          {i.html ? (
+            <div
+              className="bhtml"
+              style={{ whiteSpace: "normal" }}
+              dangerouslySetInnerHTML={{ __html: i.html }}
+              onClick={(ev) => {
+                const a = ev.target.closest && ev.target.closest("a");
+                if (a) {
+                  ev.preventDefault();
+                  window.open(a.href, "_blank");
+                }
+              }}
+            />
+          ) : (
+            <div className="btext">
+              {i.text || <span className="muted">(empty)</span>}
+            </div>
+          )}
           {i.quoted && (
             <>
               <button

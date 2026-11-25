@@ -60,43 +60,159 @@ export const socialUrl = (id, value) => {
 
 const clamp = (v, lo, hi, d) => Math.max(lo, Math.min(hi, Number(v) || d));
 const FONT = "font-family:'Segoe UI',Arial,Helvetica,sans-serif;";
+// email-safe font choices for the visual signature editor: key -> [label, css stack]
+export const FONT_STACKS = {
+  segoe: ["Segoe UI", "'Segoe UI',Arial,Helvetica,sans-serif"],
+  arial: ["Arial", "Arial,Helvetica,sans-serif"],
+  verdana: ["Verdana", "Verdana,Geneva,sans-serif"],
+  tahoma: ["Tahoma", "Tahoma,Geneva,sans-serif"],
+  trebuchet: ["Trebuchet MS", "'Trebuchet MS',Helvetica,sans-serif"],
+  georgia: ["Georgia", "Georgia,'Times New Roman',serif"],
+  times: ["Times New Roman", "'Times New Roman',Times,serif"],
+  courier: ["Courier New", "'Courier New',Courier,monospace"],
+};
 
 const TEXT_LABELS = { mail: "Email", phone: "Tel", wc: "WeChat", globe: "Web", pin: "Location" };
 
+const HEX = /^#[\da-f]{6}$/i;
+// default fill of the rectangle-type items (bar / hair / vline are the three lines of the classic layout)
+const RECT_DEF = { bar: "accent", hair: "#e2e8f0", vline: "accent" };
+export const rectBg = (it = {}, id = "", a = "#2563eb") => (HEX.test(it.bg || "") ? it.bg : RECT_DEF[id] === "accent" ? a : RECT_DEF[id] || "#cbd5e1");
+
+// ---- FREE LAYOUT -> email-safe table ----------------------------------------------------------
+// Email clients ignore position:absolute, so every item (x, y, w, h) is compiled into ONE table:
+// all item edges become column / row boundaries, each item is a cell with colspan / rowspan,
+// and a 1px "ruler" column on the right carries the row heights. Items must not overlap
+// (overlapping items are pushed down to the next free row).
+function compileLayout(LI, parts, a) {
+  const items = [];
+  Object.entries(LI).forEach(([id, it]) => {
+    if (!it || it.hidden) return;
+    const isRect = id === "bar" || id === "hair" || id === "vline" || it.type === "rect";
+    if (!isRect && !parts[id]) return;
+    items.push({
+      id, rect: isRect, html: isRect ? "" : parts[id], bg: isRect ? rectBg(it, id, a) : "", radius: Math.max(0, Number(it.radius) || 0),
+      x: Math.max(0, Math.round(Number(it.x) || 0)), y: Math.max(0, Math.round(Number(it.y) || 0)),
+      w: Math.max(1, Math.round(Number(it.w) || 1)), h: Math.max(1, Math.round(Number(it.h) || 20)),
+    });
+  });
+  if (!items.length) return "";
+  const uniq = (v) => [...new Set(v)].sort((p, q) => p - q);
+  const xs = uniq([0, ...items.flatMap((i) => [i.x, i.x + i.w])]);
+  const ys = uniq([0, ...items.flatMap((i) => [i.y, i.y + i.h])]);
+  const cw = xs.slice(1).map((v, i) => v - xs[i]);
+  const rh = ys.slice(1).map((v, i) => v - ys[i]);
+  const occ = rh.map(() => cw.map(() => null));
+  const clear = (r, c0, c1) => { for (let c = c0; c < c1; c++) if (occ[r][c]) return false; return true; };
+  items.sort((p, q) => p.y - q.y || p.x - q.x);
+  items.forEach((it) => {
+    const c0 = xs.indexOf(it.x), c1 = xs.indexOf(it.x + it.w);
+    let r0 = ys.indexOf(it.y), r1 = ys.indexOf(it.y + it.h);
+    const span = r1 - r0;
+    while (r0 < rh.length && !clear(r0, c0, c1)) r0++; // overlap: push down to the first free row
+    if (r0 >= rh.length) { rh.push(1); occ.push(cw.map(() => null)); }
+    r1 = Math.min(r0 + span, rh.length);
+    for (let r = r0 + 1; r < r1; r++) if (!clear(r, c0, c1)) { r1 = r; break; }
+    r1 = Math.max(r1, r0 + 1);
+    for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) occ[r][c] = it;
+    Object.assign(it, { c0, c1, r0, r1 });
+  });
+  const W = xs[xs.length - 1];
+  const zero = "padding:0;font-size:0;line-height:0;";
+  let t = `<table cellpadding="0" cellspacing="0" border="0" width="${W + 1}" style="width:${W + 1}px;border-collapse:collapse;table-layout:fixed;">`;
+  t += `<tr>${cw.map((w) => `<td width="${w}" style="width:${w}px;height:0;${zero}"></td>`).join("")}<td width="1" style="width:1px;height:0;${zero}"></td></tr>`;
+  rh.forEach((h, r) => {
+    t += "<tr>";
+    let c = 0;
+    while (c < cw.length) {
+      const it = occ[r][c];
+      if (it) {
+        if (it.r0 === r && it.c0 === c) {
+          const w = cw.slice(it.c0, it.c1).reduce((p, q) => p + q, 0);
+          t += `<td colspan="${it.c1 - it.c0}" rowspan="${it.r1 - it.r0}" width="${w}" valign="top"${it.rect ? ` bgcolor="${it.bg}"` : ""} style="width:${w}px;padding:0;vertical-align:top;${it.rect ? `background-color:${it.bg};${it.radius ? `border-radius:${it.radius}px;` : ""}font-size:0;line-height:0;` : ""}">${it.rect ? "&nbsp;" : it.html}</td>`;
+        }
+        c = it.c1;
+        continue;
+      }
+      let k = c;
+      while (k < cw.length && !occ[r][k]) k++;
+      t += `<td colspan="${k - c}" width="${cw.slice(c, k).reduce((p, q) => p + q, 0)}" style="${zero}"></td>`;
+      c = k;
+    }
+    t += `<td width="1" height="${h}" style="width:1px;height:${h}px;${zero}"></td></tr>`;
+  });
+  t += "</table>";
+  // explicit white card (bgcolor + inline style): webmail dark modes would otherwise paint a dark background behind dark text
+  return `<table cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="${FONT}background-color:#ffffff;color:#1e293b;color-scheme:light only;"><tr><td bgcolor="#ffffff" style="background-color:#ffffff;padding:4px 12px 12px 4px;">${t}</td></tr></table>`;
+}
+
+// build(fields)              -> email HTML (classic layout, or the free layout when fields.layout.items exists)
+// build(fields, {parts:true}) -> { parts: { id: innerHtml } } used by the visual editor to draw each item on its canvas
 export const SIGNATURES = [{
   id: "hamim-signature", name: "Hamim's signature", purpose: "Supplied style",
-  build: (f = {}) => {
-    const a = /^#[\da-f]{6}$/i.test(f.accent || "") ? f.accent : "#2563eb";
+  build: (f = {}, opt = {}) => {
+    const a = HEX.test(f.accent || "") ? f.accent : "#2563eb";
     const n = String(f.name || "");
-    const size = clamp(f.imageSize, 56, 112, 88), soc = clamp(f.socialIconSize, 20, 36, 28);
+    const size = clamp(f.imageSize, 24, 240, 88), soc = clamp(f.socialIconSize, 16, 48, 28);
     const mode = f.mode === "photo" && !f.photo ? "logo" : f.mode || "logo";
     const textOnly = f.iconStyle === "text"; // text labels instead of icons (for webmail that blocks images)
     const base = String(f.iconBase || "").trim().replace(/\/+$/, "");
     const src = (name) => (base ? `${base}/${name}.png` : iconPng(name, a));
     const img = (name, s) => `<img src="${esc(src(name))}" width="${s}" height="${s}" alt="${ICON_LABELS[name]}" style="display:block;border:0;width:${s}px;height:${s}px;cursor:pointer;">`;
 
+    // ---- per-element design overrides: styles[id] = { dx, dy, align, color, bg, size, bold, italic, font, link, shape, radius } ----
+    // classic layout: f.styles (ids: pic, name, title, org, contacts, social, cta, tag; dx/dy become margins)
+    // free layout:    f.layout.items (same keys + x, y, w, h, type, text, src ...); position comes from the compiled table instead
+    const free = !!(opt.parts || (f.layout && f.layout.items));
+    const LI = (f.layout && f.layout.items) || {};
+    const S = free ? LI : f.styles && typeof f.styles === "object" ? f.styles : {};
+    const o = (id) => S[id] || {};
+    const nv = (v, lo, hi) => (v === undefined || v === null || v === "" || Number.isNaN(Number(v)) ? null : Math.max(lo, Math.min(hi, Number(v))));
+    const hx = (v, d) => (HEX.test(v || "") ? v : d);
+    const fam = (id) => (FONT_STACKS[o(id).font] ? `font-family:${FONT_STACKS[o(id).font][1]};` : FONT);
+    const tx = (id, d) => {
+      const x = o(id);
+      return `${fam(id)}font-size:${nv(x.size, 8, 64) ?? d.size}px;font-weight:${x.bold === undefined ? d.weight : x.bold ? 700 : 400};color:${hx(x.color, d.color)};${x.italic ? "font-style:italic;" : ""}${x.align ? `text-align:${x.align};` : ""}`;
+    };
+    const lk = (id, inner) => (o(id).link ? `<a href="${esc(href(o(id).link))}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;cursor:pointer;">${inner}</a>` : inner);
+    const D = (id) => (f._design && !free ? ` data-el="${id}"` : ""); // classic-layout markers, only used to seed the free layout
+    const mv = (id, inner, mt = 0, style = "") => {
+      if (free) return `<div style="${style}">${inner}</div>`;
+      const x = o(id), dx = nv(x.dx, -80, 400) || 0, dy = nv(x.dy, -80, 400) || 0;
+      return `<div${D(id)} style="margin-top:${mt + dy}px;${dx ? `margin-left:${dx}px;` : ""}${style}">${inner}</div>`;
+    };
+
     // logo letter: the user's own choice (1-2 characters), otherwise the first letter of the name
     const custom = String(f.logoLetter || "").trim().slice(0, 2);
     const letter = (custom || n.trim()[0] || "H").toUpperCase();
     const letterSize = Math.round(size * (letter.length > 1 ? 0.36 : 0.475));
 
-    let pic = "";
+    const px = o("pic"), shape = px.shape; // "circle" | "round" | "square"
+    const rad = (d) => (shape === "circle" ? "50%" : shape === "round" ? "20px" : shape === "square" ? "0" : d);
+    let picInner = "";
     if (mode === "photo")
-      pic = `<td valign="middle" style="padding-right:16px;"><img src="${esc(f.photo)}" width="${size}" height="${size}" alt="${esc(n)}" style="display:block;width:${size}px;height:${size}px;border-radius:50%;border:3px solid ${a};object-fit:cover;"></td>`;
+      picInner = mv("pic", lk("pic", `<img src="${esc(f.photo)}" width="${size}" height="${size}" alt="${esc(n)}" style="display:block;width:${size}px;height:${size}px;border-radius:${rad("50%")};border:3px solid ${a};object-fit:cover;">`));
     else if (mode === "logo")
-      pic = `<td valign="middle" style="padding-right:16px;"><table cellpadding="0" cellspacing="0" border="0"><tr><td width="${size}" height="${size}" align="center" valign="middle" bgcolor="${a}" style="width:${size}px;height:${size}px;border-radius:20px;${FONT}font-size:${letterSize}px;font-weight:700;color:#ffffff;">${esc(letter)}</td></tr></table></td>`;
+      picInner = mv("pic", `<table cellpadding="0" cellspacing="0" border="0"><tr><td width="${size}" height="${size}" align="center" valign="middle" bgcolor="${hx(px.bg, a)}" style="width:${size}px;height:${size}px;border-radius:${rad("20px")};${fam("pic")}font-size:${letterSize}px;font-weight:700;color:${hx(px.color, "#ffffff")};">${lk("pic", esc(letter))}</td></tr></table>`);
+    const pic = picInner ? `<td valign="middle" style="padding-right:16px;">${picInner}</td>` : "";
 
-    // name stays on ONE line (nowrap); the other lines wrap inside a 240px column
-    const who = `<td valign="middle" width="240" style="width:240px;"><div style="${FONT}font-size:26px;font-weight:700;color:#0f172a;letter-spacing:-0.6px;line-height:1.1;white-space:nowrap;">${esc(n)}</div>`
-      + (f.title ? `<div style="${FONT}font-size:13px;font-weight:700;color:${a};margin-top:6px;">${esc(f.title)}</div>` : "")
-      + (f.org || f.field ? `<div style="${FONT}font-size:12px;color:#475569;margin-top:3px;line-height:1.45;">${esc(f.org || "")}${f.org && f.field ? "<br>" : ""}${esc(f.field || "")}</div>` : "")
-      + `</td>`;
+    // classic text column width: auto (fits the job title on ONE line) unless the user set a width.
+    // A width the user sets can be as small as they like: the text then wraps instead of being forced to the title length.
+    const titleW = Math.ceil(String(f.title || "").length * 7.6);
+    const userW = Number(f.textWidth) > 0 ? Math.min(460, Math.max(80, Number(f.textWidth))) : 0;
+    const whoW = userW || Math.max(240, titleW);
+    const orgW = userW || 240;
+    const nowrap = free || userW ? "" : "white-space:nowrap;";
+    const nameH = n ? mv("name", lk("name", esc(n)), 0, `${tx("name", { size: 26, weight: 700, color: "#0f172a" })}letter-spacing:-0.6px;line-height:1.1;${nowrap}`) : "";
+    const titleH = f.title ? mv("title", lk("title", esc(f.title)), 6, `${tx("title", { size: 13, weight: 700, color: a })}${nowrap}`) : "";
+    const orgH = f.org || f.field ? mv("org", lk("org", `${esc(f.org || "")}${f.org && f.field ? "<br>" : ""}${esc(f.field || "")}`), 3, `${tx("org", { size: 12, weight: 400, color: "#475569" })}line-height:1.45;${free ? "" : `max-width:${orgW}px;`}`) : "";
+    const who = `<td${f._design && !free ? ' data-sig="who"' : ""} valign="middle" width="${whoW}" style="width:${whoW}px;">${nameH}${titleH}${orgH}</td>`;
 
     const row = (icon, text, url) => {
       const lead = textOnly
         ? `<td valign="middle" style="${FONT}font-size:11px;font-weight:700;color:${a};padding:4px 12px 4px 0;white-space:nowrap;">${TEXT_LABELS[icon]}</td>`
         : `<td valign="middle" style="padding:4px 10px 4px 0;">${img(icon, 18)}</td>`;
-      return `<tr>${lead}<td valign="middle" style="${FONT}font-size:13px;color:#1e293b;padding:4px 0;">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" style="color:#1e293b;text-decoration:none;cursor:pointer;">${esc(text)}</a>` : esc(text)}</td></tr>`;
+      return `<tr>${lead}<td valign="middle" style="${tx("contacts", { size: 13, weight: 400, color: "#1e293b" })}padding:4px 0;white-space:nowrap;">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" style="color:${hx(o("contacts").color, "#1e293b")};text-decoration:none;cursor:pointer;">${esc(text)}</a>` : esc(text)}</td></tr>`;
     };
     let rows = "";
     if (f.email) rows += row("mail", f.email, `mailto:${f.email}`);
@@ -115,29 +231,56 @@ export const SIGNATURES = [{
         : img(k, soc);
       s += `<td valign="middle" style="padding-right:${textOnly ? 14 : 10}px;">${u ? `<a href="${esc(u)}" target="_blank" rel="noopener" title="${esc(ICON_LABELS[k])}" style="text-decoration:none;cursor:pointer;display:inline-block;">${inner}</a>` : inner}</td>`;
     });
-    const cta = f.cta && f.ctau ? `<a href="${esc(href(f.ctau))}" style="display:inline-block;background:${a};color:#ffffff;${FONT}font-size:12px;font-weight:700;letter-spacing:0.3px;padding:9px 18px;border-radius:8px;text-decoration:none;cursor:pointer;">${esc(f.cta)}</a>` : "";
+    const cx = o("cta");
+    const cta = f.cta && f.ctau ? `<a href="${esc(href(f.ctau))}" style="display:inline-block;background:${hx(cx.bg, a)};color:${hx(cx.color, "#ffffff")};${fam("cta")}font-size:${nv(cx.size, 9, 24) ?? 12}px;font-weight:${cx.bold === false ? 400 : 700};${cx.italic ? "font-style:italic;" : ""}letter-spacing:0.3px;padding:9px 18px;border-radius:${nv(cx.radius, 0, 30) ?? 8}px;text-decoration:none;cursor:pointer;white-space:nowrap;">${esc(f.cta)}</a>` : "";
+    const contactsH = rows ? mv("contacts", `<table cellpadding="0" cellspacing="0" border="0">${rows}</table>`) : "";
+    const socialH = s ? mv("social", `<table cellpadding="0" cellspacing="0" border="0"><tr>${s}</tr></table>`) : "";
+    const ctaH = cta ? mv("cta", cta, s ? 12 : 0) : "";
+    const tagH = f.tag ? mv("tag", lk("tag", esc(f.tag)), 12, `${tx("tag", { size: 11, weight: 400, color: "#64748b" })}letter-spacing:0.4px;`) : "";
+
+    if (free) {
+      const parts = {};
+      if (picInner) parts.pic = picInner;
+      if (nameH) parts.name = nameH;
+      if (titleH) parts.title = titleH;
+      if (orgH) parts.org = orgH;
+      if (contactsH) parts.contacts = contactsH;
+      if (socialH) parts.social = socialH;
+      if (ctaH) parts.cta = ctaH;
+      if (tagH) parts.tag = tagH;
+      // items the user added on the canvas
+      Object.entries(LI).forEach(([id, it]) => {
+        if (!it || it.hidden) return;
+        if (it.type === "text")
+          parts[id] = mv(id, lk(id, esc(it.text || "").replace(/\n/g, "<br>")), 0, `${tx(id, { size: 13, weight: 400, color: "#1e293b" })}line-height:1.4;`);
+        else if (it.type === "image" && it.src) {
+          const w = Math.round(Number(it.w) || 80), h = Math.round(Number(it.h) || 80);
+          parts[id] = lk(id, `<img src="${esc(it.src)}" width="${w}" height="${h}" alt="" style="display:block;border:0;width:${w}px;height:${h}px;object-fit:${it.fit === "contain" ? "contain" : "cover"};border-radius:${nv(it.radius, 0, 999) ?? 0}px;">`);
+        }
+      });
+      if (opt.parts) return { parts, accent: a };
+      return compileLayout(LI, parts, a);
+    }
 
     // social links + button sit UNDER the name/title/organisation text (aligned with the text, not the logo)
     const off = mode === "none" ? 0 : size + 16;
+    const cardW = Math.max(640, off + whoW + 26 + 260);
     const under = (s || cta)
-      ? `<table cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;"><tr><td style="padding-left:${off}px;">`
-        + (s ? `<table cellpadding="0" cellspacing="0" border="0"><tr>${s}</tr></table>` : "")
-        + (cta ? `<div style="margin-top:${s ? 12 : 0}px;">${cta}</div>` : "")
-        + `</td></tr></table>`
+      ? `<table cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;"><tr><td style="padding-left:${off}px;">${socialH}${ctaH}</td></tr></table>`
       : "";
 
     // the line goes on TOP, because the signature is the last thing in the email
-    const bar = `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;"><tr><td width="72" height="4" bgcolor="${a}" style="font-size:0;line-height:0;">&nbsp;</td><td height="1" bgcolor="#e2e8f0" style="font-size:0;line-height:0;">&nbsp;</td></tr></table>`;
+    const bar = `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;"><tr><td${D("bar")} width="72" height="4" bgcolor="${a}" style="font-size:0;line-height:0;">&nbsp;</td><td${D("hair")} height="1" bgcolor="#e2e8f0" style="font-size:0;line-height:0;">&nbsp;</td></tr></table>`;
 
     // Explicit white card (bgcolor attribute + inline style, no transparency). Webmail dark modes (QQ, 163, Outlook.com)
     // paint their own dark background behind a transparent signature, which made the dark text unreadable.
-    return `<table cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="${FONT}max-width:640px;background-color:#ffffff;color:#1e293b;color-scheme:light only;"><tr><td bgcolor="#ffffff" style="background-color:#ffffff;padding:4px 12px 12px 4px;">`
-      + `<table cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="${FONT}max-width:640px;background-color:#ffffff;">`
+    return `<table cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="${FONT}max-width:${cardW}px;background-color:#ffffff;color:#1e293b;color-scheme:light only;"><tr><td bgcolor="#ffffff" style="background-color:#ffffff;padding:4px 12px 12px 4px;">`
+      + `<table${f._design ? " data-card=\"1\"" : ""} cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="${FONT}max-width:${cardW}px;background-color:#ffffff;">`
       + `<tr><td colspan="2">${bar}</td></tr>`
       + `<tr><td valign="middle" style="padding-right:26px;"><table cellpadding="0" cellspacing="0" border="0"><tr>${pic}${who}</tr></table>${under}</td>`
-      + (rows ? `<td valign="middle" style="border-left:3px solid ${a};padding-left:26px;"><table cellpadding="0" cellspacing="0" border="0">${rows}</table></td>` : "")
+      + (rows ? `<td${D("vline")} valign="middle" style="border-left:3px solid ${a};padding-left:26px;">${contactsH}</td>` : "")
       + `</tr>`
-      + (f.tag ? `<tr><td colspan="2"><div style="${FONT}font-size:11px;color:#64748b;margin-top:12px;letter-spacing:0.4px;">${esc(f.tag)}</div></td></tr>` : "")
+      + (tagH ? `<tr><td colspan="2">${tagH}</td></tr>` : "")
       + `</table>`
       + `</td></tr></table>`;
   },

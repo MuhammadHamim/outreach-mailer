@@ -1,5 +1,5 @@
 // Direct PDF file (pages rendered as images). Used where printing is blocked (embedded previews) or when the user prefers a file.
-export async function pdfFile(name: string) {
+export async function pdfFile(name: string, data?: unknown) {
   const [{ default: h2c }, { jsPDF }] = await Promise.all([import('html2canvas-pro'), import('jspdf')])
   const src = document.getElementById('pages')
   if (!src) throw new Error('Nothing to export')
@@ -19,7 +19,12 @@ export async function pdfFile(name: string) {
       if (i) pdf.addPage()
       pdf.addImage(cv.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 210, 297)
     }
-    const blob = pdf.output('blob'), filename = (name || 'resume').replace(/[^\w\- ]+/g, '') + '.pdf'
+    let blob: Blob = pdf.output('blob')
+    const filename = (name || 'resume').replace(/[^\w\- ]+/g, '') + '.pdf'
+    if (data) { // keep the resume data inside the file so it can be uploaded and edited again
+      const { embedData } = await import('./pdfImport')
+      blob = new Blob([(await embedData(new Uint8Array(await blob.arrayBuffer()), data, name)) as BlobPart], { type: 'application/pdf' })
+    }
     const dl = await (window as any).claude?.use?.('downloads')
     if (dl) return void (await dl.save({ filename, data: blob }))
     const a = document.createElement('a')

@@ -39,9 +39,9 @@ export default function Resumes() {
   const load = () => api.get('/api/resumes').then((r) => { setItems(r.items); setDir(r.dir); }).catch((e) => setErr(e.message));
   useEffect(() => { load(); }, []);
 
-  const create = async (data, template = 'classic') => {
+  const create = async (data, template = 'classic', name = 'Untitled resume') => {
     try {
-      const rec = { id: newId(), name: 'Untitled resume', template, data: structuredClone(data), updated: Date.now() };
+      const rec = { id: newId(), name, template, data: structuredClone(data), updated: Date.now() };
       await api.put(`/api/resumes/${rec.id}`, rec);
       openEditor(rec.id);
     } catch (e) { toast(e.message, 'err'); }
@@ -49,6 +49,16 @@ export default function Resumes() {
   const dup = async (r) => {
     const copy = { ...r, id: newId(), name: `${r.name} (copy)`, updated: Date.now() };
     try { await api.put(`/api/resumes/${copy.id}`, copy); toast('Resume copied'); load(); } catch (e) { toast(e.message, 'err'); }
+  };
+  const onPdf = async (e) => {
+    const f = e.target.files?.[0]; e.target.value = '';
+    if (!f) return;
+    try {
+      const { readResumePdf } = await import('../resume/core/pdfImport');
+      const { data, exact } = await readResumePdf(f);
+      const base = f.name.replace(/\.pdf$/i, '');
+      await create(data, data.template && TEMPLATES[data.template] ? data.template : 'classic', exact ? base : `${base} (imported - review)`);
+    } catch (err) { toast(err.message, 'err'); }
   };
   const doDelete = async () => { try { await api.del(`/api/resumes/${del.id}`); toast('Resume deleted'); setDel(null); load(); } catch (e) { toast(e.message, 'err'); } };
 
@@ -61,6 +71,7 @@ export default function Resumes() {
       <header className="page-head">
         <div><h1>Resumes</h1><p className="muted">Build, edit and download professional resumes. Everything autosaves to your Resume folder.</p></div>
         <div className="btn-row">
+          <label className="btn" style={{ cursor: 'pointer' }}><FileUp size={16} /> Import PDF<input type="file" accept="application/pdf,.pdf" hidden onChange={onPdf} /></label>
           <button className="btn" onClick={() => setImporting(true)}><FileUp size={16} /> Import JSON</button>
           <button className="btn" onClick={() => create(SAMPLE_PLAIN)}><Sparkles size={16} /> From sample</button>
           <button className="btn primary" onClick={() => create(BLANK)}><Plus size={16} /> New resume</button>

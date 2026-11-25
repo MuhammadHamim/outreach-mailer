@@ -137,7 +137,17 @@ async function startServer() {
   throw new Error('The local server did not start');
 }
 
+let pdfBridgeReady = false;
+function setupPdfBridge() { // lets the editor print itself to a real text PDF (ATS-friendly) and embed the resume data
+  if (pdfBridgeReady) return; pdfBridgeReady = true;
+  try {
+    ipcMain.handle('desktop:printPdf', (e) => e.sender.printToPDF({ pageSize: 'A4', printBackground: true, preferCSSPageSize: true }));
+    require('electron').session.defaultSession.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'pdf-bridge.cjs') });
+  } catch (err) { console.error('PDF bridge unavailable:', err); }
+}
+
 function createWindow() {
+  setupPdfBridge();
   win = new BrowserWindow({ width: 1320, height: 860, minWidth: 420, minHeight: 600, show: false, title: 'Outreach Mailer',
     icon: appIcon(), autoHideMenuBar: true, backgroundColor: '#1a1a1b',
     webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.cjs') } });

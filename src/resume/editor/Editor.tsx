@@ -31,8 +31,18 @@ export function Editor({ user, init, onBack }: { user: api.User; init: Rec; onBa
 
   const exportPdf = async (print: boolean) => {
     await dz.clearSel()
+    const pdfApi = (window as any).desktopPdf // desktop app only: real text PDF + the resume data embedded for re-import
+    if (print && pdfApi?.print) {
+      setBusy(true)
+      try {
+        await new Promise((r) => setTimeout(r, 150)) // let the selection chrome disappear before printing
+        const { savePdfWithData } = await import('../core/pdfImport')
+        await savePdfWithData(await pdfApi.print(), rec.name, { template: rec.template, ...d })
+      } catch (e) { tell('PDF export failed: ' + (e as Error).message) }
+      setBusy(false); return
+    }
     if (print && window.self === window.top) { const o = document.title; document.title = rec.name || 'resume'; window.print(); document.title = o; return }
-    setBusy(true); try { await pdfFile(rec.name) } catch (e) { tell('PDF export failed: ' + (e as Error).message) } setBusy(false)
+    setBusy(true); try { await pdfFile(rec.name, { template: rec.template, ...d }) } catch (e) { tell('PDF export failed: ' + (e as Error).message) } setBusy(false)
   }
   const onContext = (x: number, y: number) => {
     if (!design) return

@@ -75,6 +75,10 @@ export const FONT_STACKS = {
 const TEXT_LABELS = { mail: "Email", phone: "Tel", wc: "WeChat", globe: "Web", pin: "Location" };
 
 const HEX = /^#[\da-f]{6}$/i;
+// every contact line and every social icon is its own item on the free canvas
+export const ROW_KEY = { c_mail: "email", c_phone: "phone", c_wc: "wcid", c_web: "web", c_loc: "loc" }; // item id -> form field
+export const SOC_KEY = { s_li: "li", s_gh: "gh", s_wc: "wcl", s_wa: "wa", s_tg: "tg", s_x: "x", s_ig: "ig", s_fb: "fb", s_yt: "yt" };
+export const BUILTIN_IDS = ["bar", "hair", "vline", "pic", "name", "title", "org", "cta", "tag", ...Object.keys(ROW_KEY), ...Object.keys(SOC_KEY)];
 // default fill of the rectangle-type items (bar / hair / vline are the three lines of the classic layout)
 const RECT_DEF = { bar: "accent", hair: "#e2e8f0", vline: "accent" };
 export const rectBg = (it = {}, id = "", a = "#2563eb") => (HEX.test(it.bg || "") ? it.bg : RECT_DEF[id] === "accent" ? a : RECT_DEF[id] || "#cbd5e1");
@@ -208,28 +212,39 @@ export const SIGNATURES = [{
     const orgH = f.org || f.field ? mv("org", lk("org", `${esc(f.org || "")}${f.org && f.field ? "<br>" : ""}${esc(f.field || "")}`), 3, `${tx("org", { size: 12, weight: 400, color: "#475569" })}line-height:1.45;${free ? "" : `max-width:${orgW}px;`}`) : "";
     const who = `<td${f._design && !free ? ' data-sig="who"' : ""} valign="middle" width="${whoW}" style="width:${whoW}px;">${nameH}${titleH}${orgH}</td>`;
 
-    const row = (icon, text, url) => {
+    // contact lines. Classic layout: one table; free layout: every line is its own item (c_mail, c_phone ...)
+    const trMark = (id) => (f._design && !free ? ` data-el="${id}"` : "");
+    const rowTr = (id, icon, text, url0) => {
+      const sid = free ? id : "contacts"; // style source: the item itself (free) or the whole contact block (classic)
+      const url = o(id).link ? href(o(id).link) : url0;
       const lead = textOnly
         ? `<td valign="middle" style="${FONT}font-size:11px;font-weight:700;color:${a};padding:4px 12px 4px 0;white-space:nowrap;">${TEXT_LABELS[icon]}</td>`
         : `<td valign="middle" style="padding:4px 10px 4px 0;">${img(icon, 18)}</td>`;
-      return `<tr>${lead}<td valign="middle" style="${tx("contacts", { size: 13, weight: 400, color: "#1e293b" })}padding:4px 0;white-space:nowrap;">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" style="color:${hx(o("contacts").color, "#1e293b")};text-decoration:none;cursor:pointer;">${esc(text)}</a>` : esc(text)}</td></tr>`;
+      return `<tr${trMark(id)}>${lead}<td valign="middle" style="${tx(sid, { size: 13, weight: 400, color: "#1e293b" })}padding:4px 0;white-space:nowrap;">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" style="color:${hx(o(sid).color, "#1e293b")};text-decoration:none;cursor:pointer;">${esc(text)}</a>` : esc(text)}</td></tr>`;
     };
-    let rows = "";
-    if (f.email) rows += row("mail", f.email, `mailto:${f.email}`);
-    if (f.phone) rows += row("phone", f.phone, `tel:${String(f.phone).replace(/\s/g, "")}`);
-    if (f.wcid) rows += row("wc", textOnly ? f.wcid : `WeChat: ${f.wcid}`, f.wcl ? href(f.wcl) : "");
-    if (f.web) rows += row("globe", f.web, href(f.web));
-    if (f.loc) rows += row("pin", f.loc);
+    const rowDefs = [
+      ["c_mail", "mail", f.email, `mailto:${f.email}`],
+      ["c_phone", "phone", f.phone, `tel:${String(f.phone || "").replace(/\s/g, "")}`],
+      ["c_wc", "wc", f.wcid ? (textOnly ? f.wcid : `WeChat: ${f.wcid}`) : "", f.wcl ? href(f.wcl) : ""],
+      ["c_web", "globe", f.web, f.web ? href(f.web) : ""],
+      ["c_loc", "pin", f.loc, ""],
+    ].filter((r) => r[2]);
+    const rows = rowDefs.map((r) => rowTr(...r)).join("");
 
     const links = { li: socialUrl("li", f.li), gh: socialUrl("gh", f.gh), wc: f.wcl ? href(f.wcl) : "", wa: socialUrl("wa", f.wa), tg: socialUrl("tg", f.tg), x: socialUrl("x", f.x), ig: socialUrl("ig", f.ig), fb: socialUrl("fb", f.fb), yt: socialUrl("yt", f.yt) };
-    let s = "";
-    Object.keys(links).forEach((k) => {
-      const u = links[k];
-      if (!(k === "wc" ? f.wcid || u : u)) return;
+    const socDefs = Object.keys(links).filter((k) => (k === "wc" ? f.wcid || links[k] : links[k])).map((k) => [`s_${k}`, k]);
+    const socInner = (id, k) => {
+      const u = o(id).link ? href(o(id).link) : links[k];
+      const sz = free ? nv(o(id).size, 12, 64) ?? soc : soc;
       const inner = textOnly
-        ? `<span style="${FONT}font-size:12px;font-weight:700;color:${a};">${ICON_LABELS[k]}</span>`
-        : img(k, soc);
-      s += `<td valign="middle" style="padding-right:${textOnly ? 14 : 10}px;">${u ? `<a href="${esc(u)}" target="_blank" rel="noopener" title="${esc(ICON_LABELS[k])}" style="text-decoration:none;cursor:pointer;display:inline-block;">${inner}</a>` : inner}</td>`;
+        ? `<span style="${fam(id)}font-size:${free ? nv(o(id).size, 8, 32) ?? 12 : 12}px;font-weight:700;color:${hx(o(id).color, a)};">${ICON_LABELS[k]}</span>`
+        : img(k, sz);
+      const link = u ? `<a href="${esc(u)}" target="_blank" rel="noopener" title="${esc(ICON_LABELS[k])}" style="text-decoration:none;cursor:pointer;display:inline-block;">${inner}</a>` : inner;
+      return f._design && !free ? `<span data-el="${id}" style="display:inline-block;">${link}</span>` : link;
+    };
+    let s = "";
+    socDefs.forEach(([id, k]) => {
+      s += `<td valign="middle" style="padding-right:${textOnly ? 14 : 10}px;">${socInner(id, k)}</td>`;
     });
     const cx = o("cta");
     const cta = f.cta && f.ctau ? `<a href="${esc(href(f.ctau))}" style="display:inline-block;background:${hx(cx.bg, a)};color:${hx(cx.color, "#ffffff")};${fam("cta")}font-size:${nv(cx.size, 9, 24) ?? 12}px;font-weight:${cx.bold === false ? 400 : 700};${cx.italic ? "font-style:italic;" : ""}letter-spacing:0.3px;padding:9px 18px;border-radius:${nv(cx.radius, 0, 30) ?? 8}px;text-decoration:none;cursor:pointer;white-space:nowrap;">${esc(f.cta)}</a>` : "";
@@ -244,8 +259,8 @@ export const SIGNATURES = [{
       if (nameH) parts.name = nameH;
       if (titleH) parts.title = titleH;
       if (orgH) parts.org = orgH;
-      if (contactsH) parts.contacts = contactsH;
-      if (socialH) parts.social = socialH;
+      rowDefs.forEach((r) => (parts[r[0]] = mv(r[0], `<table cellpadding="0" cellspacing="0" border="0">${rowTr(...r)}</table>`)));
+      socDefs.forEach(([id, k]) => (parts[id] = mv(id, socInner(id, k))));
       if (ctaH) parts.cta = ctaH;
       if (tagH) parts.tag = tagH;
       // items the user added on the canvas

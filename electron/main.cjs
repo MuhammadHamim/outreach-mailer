@@ -141,7 +141,7 @@ let pdfBridgeReady = false;
 function setupPdfBridge() { // lets the editor print itself to a real text PDF (ATS-friendly) and embed the resume data
   if (pdfBridgeReady) return; pdfBridgeReady = true;
   try {
-    ipcMain.handle('desktop:printPdf', (e) => e.sender.printToPDF({ pageSize: 'A4', printBackground: true, preferCSSPageSize: true }));
+    ipcMain.handle('desktop:printPdf', (e) => e.sender.printToPDF({ pageSize: 'A4', printBackground: true, preferCSSPageSize: true, margins: { top: 0, bottom: 0, left: 0, right: 0 }, generateTaggedPDF: true }));
     require('electron').session.defaultSession.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'pdf-bridge.cjs') });
   } catch (err) { console.error('PDF bridge unavailable:', err); }
 }

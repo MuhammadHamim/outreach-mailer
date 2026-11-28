@@ -2161,3 +2161,247 @@ code {
   background: var(--red-soft);
   color: var(--red);
 }
+
+/* ---------- Professor Finder ---------- */
+.prof-find {
+  display: grid;
+  grid-template-columns: 1fr 130px 150px auto;
+  gap: 12px;
+  align-items: end;
+}
+.prof-find textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+.prof-cap {
+  margin: 10px 0 0;
+}
+.prof-sources {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+.prof-sources li {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.prof-sources li.bad {
+  color: var(--red);
+}
+.prof-src-url {
+  font-weight: 600;
+  word-break: break-all;
+}
+.prof-adv {
+  margin-top: 10px;
+}
+.prof-adv summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.prof-found,
+.prof-job {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.prof-links {
+  max-height: 260px;
+  overflow: auto;
+  margin-top: 10px;
+  display: grid;
+  gap: 2px;
+}
+.prof-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.prof-link:hover {
+  background: var(--surface-2);
+}
+.prof-link small {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+}
+.prof-bar {
+  height: 8px;
+  border-radius: 99px;
+  background: var(--surface-2);
+  overflow: hidden;
+  margin-top: 8px;
+}
+.prof-bar i {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.3s;
+}
+.prof-errs {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  word-break: break-all;
+}
+.prof-kw {
+  margin-top: 16px;
+  margin-bottom: 16px;
+}
+.prof-chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.prof-row {
+  display: grid;
+  grid-template-columns:
+    32px minmax(170px, 1.1fr) minmax(150px, 1fr) minmax(180px, 1fr)
+    minmax(240px, 2fr) 60px 130px;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 18px;
+  min-width: 1100px;
+  border-bottom: 1px solid var(--border);
+}
+.prof-row.thead {
+  align-items: center;
+}
+.prof-row:last-child {
+  border-bottom: 0;
+}
+.prof-row:not(.thead):hover {
+  background: var(--surface-2);
+}
+.prof-row.sel {
+  background: var(--primary-soft);
+}
+.prof-row select,
+.prof-note {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.prof-note {
+  margin-top: 6px;
+}
+.prof-links-mini {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.prof-mail {
+  all: unset;
+  cursor: pointer;
+  color: var(--primary);
+  word-break: break-all;
+}
+.prof-research {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.prof-research.open {
+  display: block;
+  overflow: visible;
+  white-space: pre-wrap;
+}
+.prof-disc {
+  font-weight: 600;
+  opacity: 0.85;
+}
+.prof-domains {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: 2px 0 4px;
+}
+.prof-domains .more {
+  opacity: 0.7;
+}
+.prof-more {
+  all: unset;
+  cursor: pointer;
+  color: var(--primary);
+  font-size: 12px;
+  margin-top: 4px;
+  align-self: flex-start;
+}
+.prof-more:hover {
+  text-decoration: underline;
+}
+.prof-detail {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.prof-detail ul {
+  margin: 4px 0 0 16px;
+  padding: 0;
+}
+.prof-hits {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.prof-score {
+  font-variant-numeric: tabular-nums;
+}
+.prof-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+@media (max-width: 800px) {
+  .prof-find {
+    grid-template-columns: 1fr;
+  }
+}
+
+.prof-assist {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.prof-verify {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary);
+}
+.prof-verify svg {
+  flex: none;
+  color: var(--primary);
+}
+.prof-verify .grow {
+  flex: 1;
+  min-width: 0;
+}
+.prof-pages {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.7;
+  word-break: break-all;
+}

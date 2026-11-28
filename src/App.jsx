@@ -10,6 +10,7 @@ import {
   LogOut,
   Send,
   PenTool,
+  GraduationCap,
 } from "lucide-react";
 import { api } from "./api.js";
 import Credit from "./Credit.jsx";
@@ -23,10 +24,12 @@ import Documents from "./pages/Documents.jsx";
 import Resumes from "./pages/Resumes.jsx";
 import SettingsPage from "./pages/Settings.jsx";
 import Signatures from "./pages/Signatures.jsx";
+import Professors from "./pages/Professors.jsx";
 
 const NAV = [
   ["/", "Dashboard", LayoutDashboard],
   ["/import", "Import", FileUp],
+  ["/professors", "Professors", GraduationCap],
   ["/emails", "Emails", Mail],
   ["/documents", "Documents", Paperclip],
   ["/resumes", "Resumes", FileText],
@@ -91,6 +94,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/import" element={<ImportPage />} />
+          <Route path="/professors" element={<Professors />} />
           <Route path="/emails" element={<Emails />} />
           <Route path="/documents" element={<Documents />} />
           <Route path="/resumes" element={<Resumes />} />

@@ -43,22 +43,25 @@ async function readEmbedded(bytes: Uint8Array): Promise<Uint8Array | null> {
   return out.find((f) => f.name === ATTACH)?.bytes ?? null
 }
 
-/** exact = the PDF was made by this app (design restored); otherwise the text was extracted and structured by guesswork. */
-export async function readResumePdf(file: File): Promise<{ data: Data; exact: boolean }> {
+/** exact = the PDF was made by this app (its design is restored from the embedded data).
+ *  Otherwise mode 'look' rebuilds the page as free text objects at their exact positions (edit them in Design mode),
+ *  and mode 'text' extracts the text into the sections of a template. */
+export async function readResumePdf(file: File, mode: 'look' | 'text' = 'look'): Promise<{ data: Data; exact: boolean; mode: 'exact' | 'look' | 'text' }> {
   const bytes = new Uint8Array(await file.arrayBuffer())
   let emb: Uint8Array | null = null
   try { emb = await readEmbedded(bytes) } catch { /* unreadable for pdf-lib: fall through to text extraction */ }
   if (emb) {
-    try { return { data: normalize(JSON.parse(new TextDecoder().decode(emb))), exact: true } } catch { /* damaged attachment: fall through */ }
+    try { return { data: normalize(JSON.parse(new TextDecoder().decode(emb))), exact: true, mode: 'exact' } } catch { /* damaged attachment: fall through */ }
   }
-  return { data: parseLines(await extractLines(bytes.slice())), exact: false }
+  if (mode === 'text') return { data: parseLines(await extractLines(bytes.slice())), exact: false, mode }
+  const { layoutFromPdf } = await import('./pdfLayout')
+  return { data: await layoutFromPdf(bytes.slice()), exact: false, mode }
 }
 
 export type Line = { text: string; x: number }
 
 async function extractLines(bytes: Uint8Array): Promise<Line[]> {
-  const pdfjs = await import('pdfjs-dist')
-  pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default
+  const pdfjs = await (await import('./pdfLayout')).loadPdfjs()
   const pdf = await pdfjs.getDocument({ data: bytes }).promise
   const lines: Line[] = []
   for (let p = 1; p <= pdf.numPages; p++) {

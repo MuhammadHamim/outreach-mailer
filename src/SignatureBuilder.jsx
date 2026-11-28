@@ -3,7 +3,7 @@ import { Save, X, Upload, Trash2, QrCode, Bold, Italic, AlignLeft, AlignCenter, 
 import jsQR from "jsqr";
 import { api } from "./api";
 import { Field, useToast } from "./ui";
-import { SIGNATURES, SAMPLE, FONT_STACKS, rectBg, adaptSignatureFields } from "./signatureTemplates";
+import { SIGNATURES, SAMPLE, FONT_STACKS, ROW_KEY, SOC_KEY, BUILTIN_IDS, rectBg, adaptSignatureFields } from "./signatureTemplates";
 import "./compose-extras.css";
 
 const TEXT = [
@@ -254,25 +254,31 @@ function ImageField({ label, hint, value, onChange, square, max }) {
 }
 
 // ======================================================================================
-// FREE-FORM SIGNATURE DESIGNER (modelled on the resume design mode)
-//  - every part of the signature is an item on a canvas: drag it anywhere, resize it with the handles,
-//    snap to the other items, nudge with the arrow keys, add text / images / shapes from the floating toolbar
-//  - the floating panel edits the selected item (position, size, alignment, colour, font, link, photo ...)
+// FREE-FORM SIGNATURE DESIGNER (modelled on the resume design mode) - this IS the signature preview.
+//  - every part of the signature (and every single contact line / social icon) is an item on the canvas
+//  - click to select, Shift/Ctrl-click or drag a box to select several, drag to move, handles to resize
+//  - snapping to the edges and centres of the other items, align + distribute, arrow-key nudging, zoom, undo / redo
+//  - the floating panel edits the selection (text, link, font, size, colour, position, photo ...)
 //  - the layout is saved in fields.layout and compiled into an email-safe table by signatureTemplates.js
 // ======================================================================================
-const KIND = { pic: "pic", name: "text", title: "text", org: "text", tag: "text", contacts: "contacts", social: "social", cta: "button", bar: "rect", hair: "rect", vline: "rect" };
-const LABEL = { pic: "Photo / logo", name: "Name", title: "Job title", org: "Organization / field", tag: "Small note", contacts: "Contact list", social: "Social icons", cta: "Button", bar: "Top accent bar", hair: "Top hairline", vline: "Divider line" };
-const BUILTIN = Object.keys(KIND);
-const AUTO = new Set(["pic", "contacts", "social", "button"]); // width follows the content
-const kindOf = (id, it = {}) => KIND[id] || (it.type === "text" ? "text" : it.type === "image" ? "image" : "rect");
+const BUILTIN = BUILTIN_IDS;
+const KIND = { pic: "pic", name: "text", title: "text", org: "text", tag: "text", cta: "button", bar: "rect", hair: "rect", vline: "rect" };
+const LABEL = {
+  pic: "Photo / logo", name: "Name", title: "Job title", org: "Organization / field", tag: "Small note", cta: "Button", bar: "Top accent bar", hair: "Top hairline", vline: "Divider line",
+  c_mail: "Email", c_phone: "Phone", c_wc: "WeChat ID", c_web: "Website", c_loc: "Location",
+  s_li: "LinkedIn icon", s_gh: "GitHub icon", s_wc: "WeChat icon", s_wa: "WhatsApp icon", s_tg: "Telegram icon", s_x: "X icon", s_ig: "Instagram icon", s_fb: "Facebook icon", s_yt: "YouTube icon",
+};
+const AUTO = new Set(["pic", "button", "row", "icon"]); // width follows the content
+const kindOf = (id, it = {}) => KIND[id] || (ROW_KEY[id] ? "row" : SOC_KEY[id] ? "icon" : it.type === "text" ? "text" : it.type === "image" ? "image" : "rect");
 const labelOf = (id, it = {}) => LABEL[id] || (it.type === "text" ? "Text" : it.type === "image" ? "Image" : "Shape");
 const TEXT_KEYS = { name: [["name", "Full name"]], title: [["title", "Job title"]], org: [["org", "Organization"], ["field", "Department or field"]], tag: [["tag", "Note text"]], cta: [["cta", "Button text"]] };
-const DEF_SIZE = { name: 26, title: 13, org: 12, contacts: 13, tag: 11, cta: 12 };
+const DEF_SIZE = { name: 26, title: 13, org: 12, tag: 11, cta: 12 };
 const DEF_BOLD = { name: true, title: true };
-const defColor = (id, accent) => ({ name: "#0f172a", title: accent, org: "#475569", contacts: "#1e293b", tag: "#64748b" })[id] || "#1e293b";
+const defColor = (id, accent) => ({ name: "#0f172a", title: accent, org: "#475569", tag: "#64748b" })[id] || "#1e293b";
 const DIRS8 = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 const HPOS = { nw: ["0%", "0%", "nwse-resize"], n: ["50%", "0%", "ns-resize"], ne: ["100%", "0%", "nesw-resize"], e: ["100%", "50%", "ew-resize"], se: ["100%", "100%", "nwse-resize"], s: ["50%", "100%", "ns-resize"], sw: ["0%", "100%", "nesw-resize"], w: ["0%", "50%", "ew-resize"] };
 const TOL = 5;
+const STYLE_KEYS_KEEP = ["x", "y", "w", "h", "type", "text", "src", "hidden"];
 
 const readImage = async (file, max) => {
   const blob = await shrink(file, max, false);
@@ -300,10 +306,12 @@ function seedLayout(real) {
   try {
     const bar = host.querySelector('[data-el="bar"]');
     if (!bar) return null;
-    const br = bar.getBoundingClientRect(), items = {};
+    const br = bar.getBoundingClientRect(), items = {}, styles = real.styles || {};
     host.querySelectorAll("[data-el]").forEach((el) => {
-      const id = el.getAttribute("data-el"), r = el.getBoundingClientRect();
-      const st = { ...((real.styles || {})[id] || {}) };
+      const id = el.getAttribute("data-el");
+      if (!BUILTIN.includes(id)) return;
+      const r = el.getBoundingClientRect();
+      const st = { ...(ROW_KEY[id] ? styles.contacts || {} : {}), ...(styles[id] || {}) };
       delete st.dx;
       delete st.dy;
       items[id] = { x: Math.round(r.left - br.left), y: Math.round(r.top - br.top), w: Math.round(r.width), h: Math.round(r.height), ...st };
@@ -312,10 +320,22 @@ function seedLayout(real) {
     if (items.vline) items.vline.w = 3;
     ["name", "title", "org"].forEach((k) => items[k] && (items[k].w += 8)); // slack: fonts differ slightly between clients
     if (items.tag) items.tag.w = Math.max(items.tag.w, 200);
-    return { items };
+    return { v: 2, items };
   } finally {
     host.remove();
   }
+}
+
+// layouts saved by the previous version had one "contacts" and one "social" block: split them into single items
+function migrateLayout(layout, parts, fields) {
+  const items = { ...layout.items }, oc = items.contacts, os = items.social;
+  delete items.contacts;
+  delete items.social;
+  const style = oc ? Object.fromEntries(Object.entries(oc).filter(([k]) => !["x", "y", "w", "h", "hidden"].includes(k))) : {};
+  const sz = fields.socialIconSize || 28;
+  Object.keys(ROW_KEY).filter((id) => parts[id] && !items[id]).forEach((id, i) => (items[id] = { ...style, x: oc ? oc.x : 0, y: (oc ? oc.y : 0) + i * 28, ...(oc && oc.hidden ? { hidden: true } : {}) }));
+  Object.keys(SOC_KEY).filter((id) => parts[id] && !items[id]).forEach((id, i) => (items[id] = { x: (os ? os.x : 0) + i * (sz + 10), y: os ? os.y : 0, ...(os && os.hidden ? { hidden: true } : {}) }));
+  return { ...layout, v: 2, items };
 }
 
 const Handle = ({ dir, onDown }) => (
@@ -326,35 +346,44 @@ const Handle = ({ dir, onDown }) => (
 );
 
 const AlignGlyph = ({ k }) => {
-  const line = { left: [3, 2, 3, 14], hcenter: [8, 2, 8, 14], right: [13, 2, 13, 14], top: [2, 3, 14, 3], vcenter: [2, 8, 14, 8], bottom: [2, 13, 14, 13] }[k];
-  const box = { left: [4, 5, 7, 3], hcenter: [5, 5, 6, 3], right: [5, 5, 7, 3], top: [5, 4, 3, 7], vcenter: [5, 5, 3, 6], bottom: [5, 5, 3, 7] }[k];
+  const line = { left: [3, 2, 3, 14], hcenter: [8, 2, 8, 14], right: [13, 2, 13, 14], top: [2, 3, 14, 3], vcenter: [2, 8, 14, 8], bottom: [2, 13, 14, 13], distH: [2, 2, 2, 14], distV: [2, 2, 14, 2] }[k];
+  const box = { left: [4, 5, 7, 3], hcenter: [5, 5, 6, 3], right: [5, 5, 7, 3], top: [5, 4, 3, 7], vcenter: [5, 5, 3, 6], bottom: [5, 5, 3, 7], distH: [5, 5, 3, 6], distV: [5, 5, 6, 3] }[k];
+  const extra = k === "distH" ? <path d="M14 2L14 14M9 5.5v5" /> : k === "distV" ? <path d="M2 14L14 14M5.5 9h5" /> : null;
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
       <path d={`M${line[0]} ${line[1]}L${line[2]} ${line[3]}`} />
+      {extra}
       <rect x={box[0]} y={box[1]} width={box[2]} height={box[3]} rx="1" />
     </svg>
   );
 };
 
-function SigStage({ fields, parts, accent, sel, setSel, patchItem, patchItems, removeItem, restoreItem, resetItemStyle, addItem, set, undo, redo, reseed }) {
+function SigStage({ fields, parts, accent, sel, setSel, patchItem, patchItems, removeItems, restoreItem, resetItemsStyle, addItem, set, undo, redo, reseed }) {
   const items = fields.layout.items;
-  const live = useRef(items);
+  const live = useRef(items), selRef = useRef(sel), zRef = useRef(1);
   live.current = items;
-  const refs = useRef({}), stage = useRef(null), panel = useRef(null), fileRef = useRef(null);
-  const [guides, setGuides] = useState(null), [grid, setGrid] = useState(false), [pp, setPp] = useState(null), [open, setOpen] = useState(true), [tick, setTick] = useState(0);
+  selRef.current = sel;
+  const refs = useRef({}), stage = useRef(null), panel = useRef(null), fileRef = useRef(null), scroller = useRef(null), canvas = useRef(null);
+  const [z, setZ] = useState(1), [guides, setGuides] = useState(null), [grid, setGrid] = useState(false), [pp, setPp] = useState(null), [open, setOpen] = useState(true), [tick, setTick] = useState(0), [mq, setMq] = useState(null), [full, setFull] = useState(false);
+  zRef.current = z;
   const toast = useToast();
 
   const shown = (id, it) => !!it && !it.hidden && (kindOf(id, it) === "rect" || !!parts[id]);
   const ids = Object.keys(items).filter((id) => shown(id, items[id]));
   const hiddenIds = Object.keys(items).filter((id) => items[id] && items[id].hidden);
+  const selIds = sel.filter((id) => shown(id, items[id]));
 
-  // measure the real size of every item (height of text, width of auto-sized blocks) and add newly filled-in builtin items
+  // measure the real size of every item (height of text, width of auto-sized blocks) and place newly filled-in builtin items
   useLayoutEffect(() => {
     const upd = {};
-    let bottom = 0;
+    let bottom = 0, rowN = 0, socN = 0;
+    const sz = fields.socialIconSize || 28;
     Object.values(items).forEach((it) => it && !it.hidden && it.h != null && (bottom = Math.max(bottom, (it.y || 0) + it.h)));
     Object.keys(parts).forEach((id) => {
-      if (!items[id] && BUILTIN.includes(id)) { upd[id] = { x: 0, y: bottom + 12, w: 260 }; bottom += 44; }
+      if (items[id] || !BUILTIN.includes(id)) return;
+      if (SOC_KEY[id]) upd[id] = { x: socN++ * (sz + 12), y: bottom + 12 };
+      else if (ROW_KEY[id]) upd[id] = { x: 0, y: bottom + 12 + rowN++ * 28 };
+      else { upd[id] = { x: 0, y: bottom + 12, w: 260 }; bottom += 44; }
     });
     Object.keys(items).forEach((id) => {
       const it = items[id], el = refs.current[id];
@@ -367,7 +396,24 @@ function SigStage({ fields, parts, accent, sel, setSel, patchItem, patchItems, r
     if (Object.keys(upd).length) patchItems(upd);
   });
 
+  // Ctrl + wheel zooms the canvas
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const fn = (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      setZ((v) => Math.max(0.4, Math.min(3, +(v * (e.deltaY < 0 ? 1.1 : 1 / 1.1)).toFixed(2))));
+    };
+    el.addEventListener("wheel", fn, { passive: false });
+    return () => el.removeEventListener("wheel", fn);
+  }, []);
+
   const box = (it) => ({ l: it.x, t: it.y, r: it.x + (it.w || 0), b: it.y + (it.h || 0) });
+  const ub = (list) => {
+    const bs = list.map((k) => box(live.current[k]));
+    return { l: Math.min(...bs.map((b) => b.l)), t: Math.min(...bs.map((b) => b.t)), r: Math.max(...bs.map((b) => b.r)), b: Math.max(...bs.map((b) => b.b)) };
+  };
   const overlaps = new Set();
   ids.forEach((a, i) => ids.slice(i + 1).forEach((b) => {
     const p = box(items[a]), q = box(items[b]);
@@ -377,10 +423,11 @@ function SigStage({ fields, parts, accent, sel, setSel, patchItem, patchItems, r
   ids.forEach((id) => { const b = box(items[id]); maxR = Math.max(maxR, b.r); maxB = Math.max(maxB, b.b); });
   const cw = Math.max(560, maxR + 60), ch = Math.max(170, maxB + 60);
 
-  const cands = (id) => {
+  // snap candidates: left / centre / right (and top / middle / bottom) of every item that is not being moved
+  const cands = (exclude) => {
     const cx = [0], cy = [0];
     Object.entries(live.current).forEach(([k, v]) => {
-      if (k === id || !shown(k, v) || v.w == null) return;
+      if (exclude.includes(k) || !shown(k, v) || v.w == null) return;
       cx.push(v.x, v.x + v.w / 2, v.x + v.w);
       cy.push(v.y, v.y + (v.h || 0) / 2, v.y + (v.h || 0));
     });
@@ -400,38 +447,75 @@ function SigStage({ fields, parts, accent, sel, setSel, patchItem, patchItems, r
     window.addEventListener("pointerup", up);
   };
 
+  // press on an item: select (Shift / Ctrl adds), then drag the whole selection
   const startDrag = (e, id) => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     stage.current && stage.current.focus();
-    setSel(id);
-    const it0 = { ...live.current[id] }, x0 = e.clientX, y0 = e.clientY, { cx, cy } = cands(id);
+    let cur = selRef.current;
+    if (e.shiftKey || e.metaKey || e.ctrlKey) return setSel(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
+    if (!cur.includes(id)) { cur = [id]; setSel(cur); }
+    const group = cur.filter((k) => shown(k, live.current[k]));
+    const start = Object.fromEntries(group.map((k) => [k, { x: live.current[k].x, y: live.current[k].y }]));
+    const b0 = ub(group), { cx, cy } = cands(group), x0 = e.clientX, y0 = e.clientY, zz = zRef.current;
     let moved = false;
     track(
       (ev) => {
         if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 3) return;
         moved = true;
-        let dx = ev.clientX - x0, dy = ev.clientY - y0;
+        let dx = (ev.clientX - x0) / zz, dy = (ev.clientY - y0) / zz;
         if (ev.shiftKey) (Math.abs(dx) > Math.abs(dy) ? (dy = 0) : (dx = 0));
-        let nx = it0.x + dx, ny = it0.y + dy;
+        dx = Math.max(-b0.l, dx);
+        dy = Math.max(-b0.t, dy);
         const gv = [], gh = [];
-        if (!ev.altKey) { nx = snapBox(nx, it0.w || 0, cx, gv); ny = snapBox(ny, it0.h || 0, cy, gh); }
+        if (!ev.altKey) {
+          dx = snapBox(b0.l + dx, b0.r - b0.l, cx, gv) - b0.l;
+          dy = snapBox(b0.t + dy, b0.b - b0.t, cy, gh) - b0.t;
+          if (grid) { if (!gv.length) dx = Math.round((b0.l + dx) / 4) * 4 - b0.l; if (!gh.length) dy = Math.round((b0.t + dy) / 4) * 4 - b0.t; }
+        }
         setGuides({ v: gv, h: gh });
-        patchItem(id, { x: Math.max(0, Math.round(nx)), y: Math.max(0, Math.round(ny)) });
+        patchItems(Object.fromEntries(group.map((k) => [k, { x: Math.max(0, Math.round(start[k].x + dx)), y: Math.max(0, Math.round(start[k].y + dy)) }])));
       },
-      () => setGuides(null),
+      () => { setGuides(null); if (!moved && cur.length > 1) setSel([id]); },
+    );
+  };
+
+  // drag a rubber band on the empty canvas to select several items
+  const startMarquee = (e) => {
+    if (e.button !== 0 || (e.target !== scroller.current && e.target !== canvas.current)) return;
+    e.preventDefault();
+    stage.current && stage.current.focus();
+    const add = e.shiftKey || e.metaKey || e.ctrlKey, base = add ? selRef.current : [];
+    if (!add) setSel([]);
+    const r = canvas.current.getBoundingClientRect(), zz = zRef.current;
+    const pt = (ev) => [(ev.clientX - r.left) / zz, (ev.clientY - r.top) / zz];
+    const [sx, sy] = pt(e);
+    let moved = false;
+    track(
+      (ev) => {
+        const [x, y] = pt(ev);
+        if (!moved && Math.hypot(x - sx, y - sy) < 3) return;
+        moved = true;
+        const q = { l: Math.min(sx, x), t: Math.min(sy, y), r: Math.max(sx, x), b: Math.max(sy, y) };
+        setMq(q);
+        const hit = ids.filter((id) => { const b = box(live.current[id]); return b.l < q.r && q.l < b.r && b.t < q.b && q.t < b.b; });
+        setSel([...new Set([...base, ...hit])]);
+      },
+      () => setMq(null),
     );
   };
 
   const startResize = (e, id, dir) => {
     e.preventDefault();
     e.stopPropagation();
-    const it0 = { ...live.current[id] }, kind = kindOf(id, it0), x0 = e.clientX, y0 = e.clientY, s0 = fields.imageSize || 88, { cx } = cands(id), ar = it0.w / Math.max(1, it0.h);
+    const it0 = { ...live.current[id] }, kind = kindOf(id, it0), x0 = e.clientX, y0 = e.clientY, zz = zRef.current;
+    const s0 = kind === "pic" ? fields.imageSize || 88 : it0.size || fields.socialIconSize || 28, { cx, cy } = cands([id]), ar = it0.w / Math.max(1, it0.h);
     track(
       (ev) => {
-        const dx = ev.clientX - x0, dy = ev.clientY - y0;
+        const dx = (ev.clientX - x0) / zz, dy = (ev.clientY - y0) / zz;
         if (kind === "pic") return set("imageSize", Math.round(Math.max(24, Math.min(240, s0 + Math.max(dx, dy)))));
+        if (kind === "icon") return patchItem(id, { size: Math.round(Math.max(12, Math.min(64, s0 + Math.max(dx, dy)))) });
         let x = it0.x, y = it0.y, w = it0.w, h = it0.h;
         if (dir.includes("e")) w = it0.w + dx;
         if (dir.includes("w")) w = it0.w - dx;
@@ -442,12 +526,14 @@ function SigStage({ fields, parts, accent, sel, setSel, patchItem, patchItems, r
         h = Math.max(2, h);
         if (dir.includes("w")) x = it0.x + it0.w - w;
         if (dir.includes("n")) y = it0.y + it0.h - h;
-        const gv = [];
+        const gv = [], gh = [];
         if (!ev.altKey) {
           if (dir.includes("e")) { const d = near(x + w, cx); if (d !== null) { w += d; gv.push(x + w); } }
           if (dir.includes("w")) { const d = near(x, cx); if (d !== null) { x += d; w -= d; gv.push(x); } }
+          if (kind !== "text" && dir.includes("s")) { const d = near(y + h, cy); if (d !== null) { h += d; gh.push(y + h); } }
+          if (kind !== "text" && dir.includes("n")) { const d = near(y, cy); if (d !== null) { y += d; h -= d; gh.push(y); } }
         }
-        setGuides({ v: gv, h: [] });
+        setGuides({ v: gv, h: gh });
         const p = { x: Math.max(0, Math.round(x)), w: Math.round(w) };
         if (kind !== "text") Object.assign(p, { y: Math.max(0, Math.round(y)), h: Math.round(h) });
         patchItem(id, p);
@@ -456,36 +542,57 @@ function SigStage({ fields, parts, accent, sel, setSel, patchItem, patchItems, r
     );
   };
 
-  const dupItem = (id) => {
-    const it = items[id];
-    if (!it || BUILTIN.includes(id)) return;
-    const nid = addItem({ ...it, x: it.x + 14, y: it.y + 14 });
-    setSel(nid);
+  const alignTo = (m) => {
+    if (!selIds.length) return;
+    let b;
+    if (selIds.length > 1) b = ub(selIds);
+    else { const o = ids.filter((k) => k !== selIds[0]); b = o.length ? ub(o) : { l: 0, t: 0, r: cw - 60, b: ch - 60 }; }
+    const map = {};
+    selIds.forEach((id) => {
+      const it = live.current[id], w = it.w || 0, h = it.h || 0, p = {};
+      if (m === "left") p.x = b.l;
+      if (m === "right") p.x = b.r - w;
+      if (m === "hcenter") p.x = (b.l + b.r) / 2 - w / 2;
+      if (m === "top") p.y = b.t;
+      if (m === "bottom") p.y = b.b - h;
+      if (m === "vcenter") p.y = (b.t + b.b) / 2 - h / 2;
+      Object.keys(p).forEach((k) => (p[k] = Math.max(0, Math.round(p[k]))));
+      map[id] = p;
+    });
+    patchItems(map);
   };
-  const nudge = (dx, dy) => { const it = items[sel]; if (it) patchItem(sel, { x: Math.max(0, it.x + dx), y: Math.max(0, it.y + dy) }); };
+  const distribute = (axis) => {
+    if (selIds.length < 3) return;
+    const H = axis === "h";
+    const arr = selIds.map((id) => ({ id, b: box(live.current[id]) })).sort((p, q) => (H ? p.b.l - q.b.l : p.b.t - q.b.t));
+    const len = (b) => (H ? b.r - b.l : b.b - b.t);
+    const first = arr[0].b, last = arr[arr.length - 1].b;
+    const gap = ((H ? last.r - first.l : last.b - first.t) - arr.reduce((s, a) => s + len(a.b), 0)) / (arr.length - 1);
+    let pos = H ? first.l : first.t;
+    const map = {};
+    arr.forEach((a) => { map[a.id] = H ? { x: Math.round(pos) } : { y: Math.round(pos) }; pos += len(a.b) + gap; });
+    patchItems(map);
+  };
+  const styleAll = (p) => patchItems(Object.fromEntries(selIds.filter((id) => ["text", "row"].includes(kindOf(id, items[id]))).map((id) => [id, p])));
+  const dupSel = () => {
+    const nids = [];
+    selIds.forEach((id) => { const it = items[id]; if (it && !BUILTIN.includes(id)) nids.push(addItem({ ...it, x: it.x + 14, y: it.y + 14 })); });
+    if (nids.length) setSel(nids);
+  };
+  const nudge = (dx, dy) => patchItems(Object.fromEntries(selIds.map((id) => [id, { x: Math.max(0, items[id].x + dx), y: Math.max(0, items[id].y + dy) }])));
   const onKey = (e) => {
     const t = e.target;
     if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
-    const mod = e.ctrlKey || e.metaKey, step = e.shiftKey ? 10 : 1;
-    if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); return e.shiftKey ? redo() : undo(); }
-    if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); return redo(); }
-    if (!sel || !items[sel]) return;
-    if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); return dupItem(sel); }
-    if (e.key === "Escape") return setSel(null);
-    if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removeItem(sel); return setSel(null); }
+    const mod = e.ctrlKey || e.metaKey, step = e.shiftKey ? 10 : 1, key = e.key.toLowerCase();
+    if (mod && key === "z") { e.preventDefault(); return e.shiftKey ? redo() : undo(); }
+    if (mod && key === "y") { e.preventDefault(); return redo(); }
+    if (mod && key === "a") { e.preventDefault(); return setSel(ids); }
+    if (e.key === "Escape") return selIds.length ? setSel([]) : setFull(false);
+    if (!selIds.length) return;
+    if (mod && key === "d") { e.preventDefault(); return dupSel(); }
+    if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removeItems(selIds); return setSel([]); }
     const k = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
     if (k) { e.preventDefault(); nudge(k[0], k[1]); }
-  };
-
-  const alignTo = (m) => {
-    const it = items[sel];
-    if (!it) return;
-    const others = ids.filter((k) => k !== sel).map((k) => box(items[k]));
-    const b = others.length
-      ? { l: Math.min(...others.map((o) => o.l)), r: Math.max(...others.map((o) => o.r)), t: Math.min(...others.map((o) => o.t)), b: Math.max(...others.map((o) => o.b)) }
-      : { l: 0, r: cw - 60, t: 0, b: ch - 60 };
-    const P = { left: { x: b.l }, hcenter: { x: Math.round((b.l + b.r) / 2 - it.w / 2) }, right: { x: b.r - it.w }, top: { y: b.t }, vcenter: { y: Math.round((b.t + b.b) / 2 - (it.h || 0) / 2) }, bottom: { y: b.b - (it.h || 0) } }[m];
-    patchItem(sel, Object.fromEntries(Object.entries(P).map(([k, v]) => [k, Math.max(0, Math.round(v))])));
   };
 
   const addImg = async (file) => {
@@ -493,12 +600,11 @@ function SigStage({ fields, parts, accent, sel, setSel, patchItem, patchItems, r
     if (!file.type.startsWith("image/")) return toast("Choose an image file (PNG, JPG, WebP or SVG)", "err");
     try {
       const im = await readImage(file, 480), w = Math.min(160, im.w);
-      setSel(addItem({ type: "image", src: im.src, x: 24, y: 24, w, h: Math.round((w * im.h) / im.w), fit: "cover" }));
-    } catch (e) {
-      toast(e.message, "err");
+      setSel([addItem({ type: "image", src: im.src, x: 24, y: 24, w, h: Math.round((w * im.h) / im.w), fit: "cover" })]);
+    } catch (err) {
+      toast(err.message, "err");
     }
   };
-
   const dragPanel = (e) => {
     if (e.target.closest("button") || e.button !== 0) return;
     e.preventDefault();
@@ -506,56 +612,78 @@ function SigStage({ fields, parts, accent, sel, setSel, patchItem, patchItems, r
     track((ev) => setPp({ left: Math.max(0, Math.min(st.width - 90, ev.clientX - st.left - ox)), top: Math.max(0, Math.min(st.height - 40, ev.clientY - st.top - oy)) }));
   };
 
-  const tb = (on) => ({ width: 34, height: 34, display: "grid", placeItems: "center", borderRadius: 8, border: 0, cursor: "pointer", background: on ? "#0d99ff" : "transparent", color: "rgba(255,255,255,.85)" });
+  const tb = (on) => ({ width: 34, height: 34, display: "grid", placeItems: "center", borderRadius: 8, border: 0, cursor: "pointer", background: on ? "#0d99ff" : "transparent", color: "rgba(255,255,255,.85)", fontSize: 15 });
   const sep = <span style={{ width: 1, height: 20, background: "rgba(255,255,255,.15)", margin: "0 4px" }} />;
-  const it = sel ? items[sel] : null;
+  const single = selIds.length === 1 ? selIds[0] : null;
+  const U = selIds.length > 1 ? ub(selIds) : null;
+  const zoomBy = (f) => setZ((v) => Math.max(0.4, Math.min(3, +(v * f).toFixed(2))));
 
   return (
-    <div ref={stage} tabIndex={0} onKeyDown={onKey} style={{ position: "relative", height: 520, marginTop: 8, border: "1px solid var(--border,#d6dae3)", borderRadius: 12, background: "#eceef3", overflow: "hidden", outline: "none" }}>
-      <div style={{ position: "absolute", inset: 0, overflow: "auto", padding: "40px 40px 90px" }} onPointerDown={(e) => { if (e.target === e.currentTarget) { setSel(null); stage.current && stage.current.focus(); } }}>
-        <div
-          onPointerDown={(e) => { if (e.target === e.currentTarget) setSel(null); }}
-          style={{ position: "relative", width: cw, height: ch, background: "#fff", boxShadow: "0 1px 6px rgba(15,23,42,.15)", borderRadius: 4, backgroundImage: grid ? "linear-gradient(to right, rgba(99,102,241,.14) 1px, transparent 1px), linear-gradient(to bottom, rgba(99,102,241,.14) 1px, transparent 1px)" : undefined, backgroundSize: grid ? "8px 8px" : undefined }}
-        >
-          {ids.map((id) => {
-            const p = items[id], k = kindOf(id, p), on = sel === id, rect = k === "rect", fixedH = rect || k === "image";
-            const dirs = k === "text" ? ["w", "e"] : fixedH ? DIRS8 : k === "pic" ? ["se"] : [];
-            return (
-              <div
-                key={id}
-                ref={(el) => { if (el) refs.current[id] = el; else delete refs.current[id]; }}
-                onPointerDown={(e) => startDrag(e, id)}
-                onDoubleClick={() => { setSel(id); setOpen(true); setTick((n) => n + 1); }}
-                title={labelOf(id, p)}
-                style={{ position: "absolute", left: p.x, top: p.y, width: AUTO.has(k) ? "max-content" : p.w, height: fixedH ? p.h : undefined, cursor: "move", touchAction: "none", boxSizing: "border-box", outline: on ? "1px solid #0d99ff" : overlaps.has(id) ? "1px dashed #f43f5e" : undefined, background: rect ? rectBg(p, id, accent) : undefined, borderRadius: rect ? p.radius || 0 : undefined }}
-              >
-                {rect && <span style={{ position: "absolute", inset: -5 }} />}
-                {!rect && <div style={{ pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: parts[id] }} />}
-                {on && dirs.map((d) => <Handle key={d} dir={d} onDown={(e, dir) => startResize(e, id, dir)} />)}
-                {on && (
-                  <span style={{ position: "absolute", left: "50%", top: "100%", transform: "translate(-50%,8px)", background: "#0d99ff", color: "#fff", fontSize: 11, lineHeight: "16px", padding: "0 6px", borderRadius: 3, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 7 }}>
-                    {Math.round(p.w || 0)} × {Math.round(p.h || 0)}
-                  </span>
-                )}
+    <div
+      ref={stage}
+      tabIndex={0}
+      onKeyDown={onKey}
+      style={{ position: full ? "fixed" : "relative", inset: full ? 0 : undefined, zIndex: full ? 2000 : undefined, height: full ? "100vh" : 560, marginTop: 8, border: "1px solid var(--border,#d6dae3)", borderRadius: full ? 0 : 12, background: "#eceef3", overflow: "hidden", outline: "none" }}
+    >
+      <div ref={scroller} onPointerDown={startMarquee} style={{ position: "absolute", inset: 0, overflow: "auto", padding: "40px 40px 96px" }}>
+        <div style={{ width: cw * z, height: ch * z }}>
+          <div
+            ref={canvas}
+            style={{ position: "relative", width: cw, height: ch, transform: `scale(${z})`, transformOrigin: "0 0", background: "#fff", boxShadow: "0 1px 6px rgba(15,23,42,.15)", borderRadius: 4, backgroundImage: grid ? "linear-gradient(to right, rgba(99,102,241,.14) 1px, transparent 1px), linear-gradient(to bottom, rgba(99,102,241,.14) 1px, transparent 1px)" : undefined, backgroundSize: grid ? "8px 8px" : undefined }}
+          >
+            {ids.map((id) => {
+              const p = items[id], k = kindOf(id, p), on = selIds.includes(id), rect = k === "rect", fixedH = rect || k === "image";
+              const dirs = single !== id ? [] : k === "text" ? ["w", "e"] : fixedH ? DIRS8 : k === "pic" || k === "icon" ? ["se"] : [];
+              return (
+                <div
+                  key={id}
+                  ref={(el) => { if (el) refs.current[id] = el; else delete refs.current[id]; }}
+                  onPointerDown={(e) => startDrag(e, id)}
+                  onDoubleClick={() => { setSel([id]); setOpen(true); setTick((n) => n + 1); }}
+                  title={labelOf(id, p)}
+                  style={{ position: "absolute", left: p.x, top: p.y, width: AUTO.has(k) ? "max-content" : p.w, height: fixedH ? p.h : undefined, cursor: "move", touchAction: "none", boxSizing: "border-box", outline: on ? "1px solid #0d99ff" : overlaps.has(id) ? "1px dashed #f43f5e" : undefined, background: rect ? rectBg(p, id, accent) : undefined, borderRadius: rect ? p.radius || 0 : undefined }}
+                >
+                  {rect && <span style={{ position: "absolute", inset: -5 }} />}
+                  {!rect && <div style={{ pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: parts[id] }} />}
+                  {dirs.map((d) => <Handle key={d} dir={d} onDown={(e, dir) => startResize(e, id, dir)} />)}
+                  {single === id && (
+                    <span style={{ position: "absolute", left: "50%", top: "100%", transform: "translate(-50%,8px)", background: "#0d99ff", color: "#fff", fontSize: 11, lineHeight: "16px", padding: "0 6px", borderRadius: 3, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 7 }}>
+                      {Math.round(p.w || 0)} × {Math.round(p.h || 0)}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+            {U && (
+              <div style={{ position: "absolute", left: U.l - 3, top: U.t - 3, width: U.r - U.l + 6, height: U.b - U.t + 6, outline: "1px dashed #0d99ff", pointerEvents: "none" }}>
+                <span style={{ position: "absolute", left: "50%", top: "100%", transform: "translate(-50%,8px)", background: "#0d99ff", color: "#fff", fontSize: 11, lineHeight: "16px", padding: "0 6px", borderRadius: 3, whiteSpace: "nowrap" }}>
+                  {selIds.length} selected · {Math.round(U.r - U.l)} × {Math.round(U.b - U.t)}
+                </span>
               </div>
-            );
-          })}
-          {guides && guides.v.map((x, i) => <div key={"v" + i} style={{ position: "absolute", left: x, top: 0, bottom: 0, width: 1, background: "#f43f5e", pointerEvents: "none" }} />)}
-          {guides && guides.h.map((y, i) => <div key={"h" + i} style={{ position: "absolute", top: y, left: 0, right: 0, height: 1, background: "#f43f5e", pointerEvents: "none" }} />)}
+            )}
+            {mq && <div style={{ position: "absolute", left: mq.l, top: mq.t, width: mq.r - mq.l, height: mq.b - mq.t, background: "rgba(99,102,241,.12)", border: "1px solid #6366f1", pointerEvents: "none" }} />}
+            {guides && guides.v.map((x, i) => <div key={"v" + i} style={{ position: "absolute", left: x, top: 0, bottom: 0, width: 1, background: "#f43f5e", pointerEvents: "none" }} />)}
+            {guides && guides.h.map((y, i) => <div key={"h" + i} style={{ position: "absolute", top: y, left: 0, right: 0, height: 1, background: "#f43f5e", pointerEvents: "none" }} />)}
+          </div>
         </div>
       </div>
 
       {/* floating tool bar (bottom centre, like the resume editor) */}
-      <div style={{ position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: 2, padding: 4, borderRadius: 12, background: "#2c2c2c", boxShadow: "0 8px 24px rgba(0,0,0,.35)", zIndex: 30 }}>
+      <div style={{ position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: 2, padding: 4, borderRadius: 12, background: "#2c2c2c", boxShadow: "0 8px 24px rgba(0,0,0,.35)", zIndex: 30, maxWidth: "96%", overflowX: "auto" }}>
         <button type="button" title="Undo (Ctrl+Z)" style={tb(false)} onClick={undo}><Undo2 size={17} /></button>
         <button type="button" title="Redo (Ctrl+Y)" style={tb(false)} onClick={redo}><Redo2 size={17} /></button>
         {sep}
-        <button type="button" title="Add text" style={tb(false)} onClick={() => { const id = addItem({ type: "text", text: "Type something", x: 24, y: 24, w: 180 }); setSel(id); setOpen(true); setTick((n) => n + 1); }}><Type size={17} /></button>
+        <button type="button" title="Add text" style={tb(false)} onClick={() => { setSel([addItem({ type: "text", text: "Type something", x: 24, y: 24, w: 180 })]); setOpen(true); setTick((n) => n + 1); }}><Type size={17} /></button>
         <button type="button" title="Add image" style={tb(false)} onClick={() => fileRef.current && fileRef.current.click()}><Upload size={17} /></button>
-        <button type="button" title="Add rectangle" style={tb(false)} onClick={() => setSel(addItem({ type: "rect", x: 24, y: 24, w: 100, h: 60, bg: "#e2e8f0" }))}><Square size={17} /></button>
-        <button type="button" title="Add line" style={tb(false)} onClick={() => setSel(addItem({ type: "rect", x: 24, y: 24, w: 120, h: 2, bg: accent }))}><Minus size={17} /></button>
+        <button type="button" title="Add rectangle" style={tb(false)} onClick={() => setSel([addItem({ type: "rect", x: 24, y: 24, w: 100, h: 60, bg: "#e2e8f0" })])}><Square size={17} /></button>
+        <button type="button" title="Add line" style={tb(false)} onClick={() => setSel([addItem({ type: "rect", x: 24, y: 24, w: 120, h: 2, bg: accent })])}><Minus size={17} /></button>
         {sep}
-        <button type="button" title="Show grid" style={{ ...tb(grid), fontSize: 14, fontWeight: 700 }} onClick={() => setGrid(!grid)}>#</button>
+        <button type="button" title="Zoom out (Ctrl + wheel)" style={tb(false)} onClick={() => zoomBy(1 / 1.2)}>−</button>
+        <button type="button" title="Reset zoom to 100%" style={{ ...tb(false), width: 46, fontSize: 12 }} onClick={() => setZ(1)}>{Math.round(z * 100)}%</button>
+        <button type="button" title="Zoom in (Ctrl + wheel)" style={tb(false)} onClick={() => zoomBy(1.2)}>+</button>
+        {sep}
+        <button type="button" title="Show grid and snap to it" style={{ ...tb(grid), fontWeight: 700 }} onClick={() => setGrid(!grid)}>#</button>
+        <button type="button" title={full ? "Exit full screen (Esc)" : "Full screen"} style={tb(full)} onClick={() => setFull(!full)}>{full ? "✕" : "⤢"}</button>
         <button type="button" title="Reset the whole layout to the classic arrangement" style={tb(false)} onClick={reseed}><RotateCcw size={16} /></button>
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { addImg(e.target.files[0]); e.target.value = ""; }} />
       </div>
@@ -563,16 +691,20 @@ function SigStage({ fields, parts, accent, sel, setSel, patchItem, patchItems, r
       {/* floating inspector panel (drag the header to move it) */}
       <div
         ref={panel}
-        style={{ position: "absolute", width: 284, maxHeight: "calc(100% - 84px)", display: "flex", flexDirection: "column", background: "#fff", color: "#0f172a", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 10px 30px rgba(15,23,42,.22)", zIndex: 25, ...(pp ? { left: pp.left, top: pp.top } : { right: 12, top: 12 }) }}
+        style={{ position: "absolute", width: 292, maxHeight: "calc(100% - 84px)", display: "flex", flexDirection: "column", background: "#fff", color: "#0f172a", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 10px 30px rgba(15,23,42,.22)", zIndex: 25, ...(pp ? { left: pp.left, top: pp.top } : { right: 12, top: 12 }) }}
         onPointerDown={(e) => e.stopPropagation()}
       >
         <div onPointerDown={dragPanel} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", borderBottom: open ? "1px solid #e2e8f0" : 0, cursor: "grab", userSelect: "none", fontSize: 12, fontWeight: 600 }}>
-          <span>{it ? labelOf(sel, it) : "Signature canvas"}</span>
+          <span>{single ? labelOf(single, items[single]) : selIds.length > 1 ? `${selIds.length} items selected` : "Signature canvas"}</span>
           <button type="button" className="btn" style={{ padding: "0 8px", minHeight: 22 }} onClick={() => setOpen(!open)}>{open ? "–" : "+"}</button>
         </div>
         {open && (
           <div style={{ overflow: "auto", padding: 10, display: "grid", gap: 10 }}>
-            <SigInspector sel={sel} it={it} fields={fields} accent={accent} set={set} patchItem={patchItem} resetItemStyle={resetItemStyle} removeItem={(id) => { removeItem(id); setSel(null); }} dupItem={dupItem} alignTo={alignTo} hiddenIds={hiddenIds} restoreItem={restoreItem} tick={tick} reseed={reseed} overlapCount={overlaps.size} />
+            <SigInspector
+              ids={selIds} items={items} fields={fields} accent={accent} set={set} patchItem={patchItem} resetItemsStyle={resetItemsStyle}
+              removeItems={(l) => { removeItems(l); setSel([]); }} dupSel={dupSel} alignTo={alignTo} distribute={distribute} styleAll={styleAll}
+              hiddenIds={hiddenIds} restoreItem={restoreItem} tick={tick} reseed={reseed} overlapCount={overlaps.size}
+            />
           </div>
         )}
       </div>
@@ -588,23 +720,39 @@ const NumF = ({ l, v, on, min, max, step = 1, title }) => (
 );
 const Tog = ({ on, onClick, title, children }) => <button type="button" className={`btn${on ? " primary" : ""}`} title={title} onClick={onClick}>{children}</button>;
 
-function SigInspector({ sel, it, fields, accent, set, patchItem, resetItemStyle, removeItem, dupItem, alignTo, hiddenIds, restoreItem, tick, reseed, overlapCount }) {
+function SigInspector({ ids, items, fields, accent, set, patchItem, resetItemsStyle, removeItems, dupSel, alignTo, distribute, styleAll, hiddenIds, restoreItem, tick, reseed, overlapCount }) {
   const first = useRef(null);
   useEffect(() => { if (tick && first.current) { first.current.focus(); first.current.select && first.current.select(); } }, [tick]);
   const row = { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" };
   const sec = { display: "grid", gap: 6, paddingTop: 8, borderTop: "1px solid #eef0f4" };
   const cap = { fontSize: 11, fontWeight: 600, color: "#64748b" };
+  const alignRow = (
+    <div style={row}>
+      {["left", "hcenter", "right", "top", "vcenter", "bottom"].map((m) => (
+        <button key={m} type="button" className="btn" style={{ padding: "2px 6px" }} title={`Align ${m.replace("hcenter", "horizontal centres").replace("vcenter", "vertical centres")}${ids.length > 1 ? " of the selection" : " to the other items"}`} onClick={() => alignTo(m)}><AlignGlyph k={m} /></button>
+      ))}
+      {ids.length > 1 && ["distH", "distV"].map((m) => (
+        <button key={m} type="button" className="btn" style={{ padding: "2px 6px" }} disabled={ids.length < 3} title={m === "distH" ? "Distribute horizontally (3+ items)" : "Distribute vertically (3+ items)"} onClick={() => distribute(m === "distH" ? "h" : "v")}><AlignGlyph k={m} /></button>
+      ))}
+    </div>
+  );
+  const fontSelFor = (cur, onPick) => (
+    <select value={cur || ""} onChange={(e) => onPick(e.target.value || undefined)} style={{ maxWidth: 140 }}>
+      <option value="">Font: default</option>
+      {Object.entries(FONT_STACKS).map(([k, [l]]) => <option key={k} value={k}>{l}</option>)}
+    </select>
+  );
 
-  if (!it)
+  if (!ids.length)
     return (
       <>
-        <p className="hint" style={{ margin: 0 }}>Click anything to select it, then drag to move. Double-click text to type. Arrow keys nudge (Shift = 10px). Hold Alt while dragging to turn snapping off.</p>
+        <p className="hint" style={{ margin: 0 }}>Click an item to select it, Shift-click or drag a box to select several. Drag to move, double-click text to type. Arrow keys nudge (Shift = 10px), Alt while dragging turns snapping off, Ctrl + wheel zooms.</p>
         {overlapCount > 0 && <p style={{ margin: 0, fontSize: 12, color: "#be123c" }}>Red dashed items overlap. Email layouts cannot overlap, so overlapping items are pushed down in the real email.</p>}
         {hiddenIds.length > 0 && (
           <div style={sec}>
             <span style={cap}>Hidden items</span>
             {hiddenIds.map((id) => (
-              <button key={id} type="button" className="btn" onClick={() => restoreItem(id)}>Show “{labelOf(id, fields.layout.items[id])}”</button>
+              <button key={id} type="button" className="btn" onClick={() => restoreItem(id)}>Show “{labelOf(id, items[id])}”</button>
             ))}
           </div>
         )}
@@ -614,7 +762,38 @@ function SigInspector({ sel, it, fields, accent, set, patchItem, resetItemStyle,
       </>
     );
 
-  const id = sel, kind = kindOf(id, it), up = (patch) => patchItem(id, patch);
+  if (ids.length > 1) {
+    const texty = ids.filter((id) => ["text", "row"].includes(kindOf(id, items[id])));
+    const same = (k) => (texty.length && texty.every((id) => items[id][k] === items[texty[0]][k]) ? items[texty[0]][k] : undefined);
+    return (
+      <>
+        {alignRow}
+        {texty.length > 0 && (
+          <div style={sec}>
+            <span style={cap}>Style all text ({texty.length})</span>
+            <div style={row}>
+              {fontSelFor(same("font"), (v) => styleAll({ font: v }))}
+              <NumF l="Aa" title="Font size" v={same("size")} min={8} max={64} on={(n) => styleAll({ size: n })} />
+            </div>
+            <div style={row}>
+              <Tog on={false} title="Bold on" onClick={() => styleAll({ bold: true })}><Bold size={14} /></Tog>
+              <Tog on={false} title="Bold off" onClick={() => styleAll({ bold: false })}>b</Tog>
+              <Tog on={false} title="Italic" onClick={() => styleAll({ italic: true })}><Italic size={14} /></Tog>
+              {[["left", AlignLeft], ["center", AlignCenter], ["right", AlignRight]].map(([k, Icon]) => <Tog key={k} on={false} title={`Text ${k}`} onClick={() => styleAll({ align: k })}><Icon size={14} /></Tog>)}
+            </div>
+            <label style={row}><span style={{ fontSize: 12 }}>Colour</span><input type="color" value={same("color") || "#1e293b"} onChange={(e) => styleAll({ color: e.target.value })} /></label>
+          </div>
+        )}
+        <div style={{ ...sec, ...row }}>
+          <button type="button" className="btn" onClick={() => resetItemsStyle(ids)}><RotateCcw size={14} /> Reset style</button>
+          <button type="button" className="btn" title="Duplicate (Ctrl+D)" onClick={dupSel}><Copy size={14} /></button>
+          <button type="button" className="btn" title="Delete / hide (Del)" onClick={() => removeItems(ids)}><Trash2 size={14} /></button>
+        </div>
+      </>
+    );
+  }
+
+  const id = ids[0], it = items[id], kind = kindOf(id, it), up = (patch) => patchItem(id, patch);
   const col = (k, def, label) => (
     <label style={{ ...row, gap: 4 }}>
       <span style={{ fontSize: 12 }}>{label}</span>
@@ -622,38 +801,29 @@ function SigInspector({ sel, it, fields, accent, set, patchItem, resetItemStyle,
       {it[k] && <button type="button" className="btn" style={{ padding: "0 6px", minHeight: 22 }} onClick={() => up({ [k]: undefined })}>Reset</button>}
     </label>
   );
-  const fontSel = (
-    <select value={it.font || ""} onChange={(e) => up({ font: e.target.value || undefined })} style={{ maxWidth: 140 }}>
-      <option value="">Font: default</option>
-      {Object.entries(FONT_STACKS).map(([k, [l]]) => <option key={k} value={k}>{l}</option>)}
-    </select>
-  );
+  const fontSel = fontSelFor(it.font, (v) => up({ font: v }));
   const link = (ph) => <input value={it.link || ""} placeholder={ph} onChange={(e) => up({ link: e.target.value || undefined })} />;
   const bold = it.bold === undefined ? !!DEF_BOLD[id] : it.bold;
-  const textStyleRows = (
+  const textStyleRows = (noAlign) => (
     <>
       <div style={row}>
         {fontSel}
-        <NumF l="Aa" title="Font size" v={it.size ?? ""} min={8} max={64} on={(n) => up({ size: n })} />
+        <NumF l="Aa" title="Font size" v={it.size} min={8} max={64} on={(n) => up({ size: n })} />
       </div>
       <div style={row}>
         <Tog on={bold} title="Bold" onClick={() => up({ bold: !bold })}><Bold size={14} /></Tog>
         <Tog on={!!it.italic} title="Italic" onClick={() => up({ italic: !it.italic || undefined })}><Italic size={14} /></Tog>
-        {[["left", AlignLeft], ["center", AlignCenter], ["right", AlignRight]].map(([k, Icon]) => (
+        {!noAlign && [["left", AlignLeft], ["center", AlignCenter], ["right", AlignRight]].map(([k, Icon]) => (
           <Tog key={k} on={it.align === k} title={`Text ${k}`} onClick={() => up({ align: it.align === k ? undefined : k })}><Icon size={14} /></Tog>
         ))}
       </div>
-      {col("color", defColor(id, accent), "Colour")}
+      {col("color", kind === "row" ? "#1e293b" : defColor(id, accent), "Colour")}
     </>
   );
 
   return (
     <>
-      <div style={row}>
-        {["left", "hcenter", "right", "top", "vcenter", "bottom"].map((m) => (
-          <button key={m} type="button" className="btn" style={{ padding: "2px 6px" }} title={`Align ${m.replace("hcenter", "horizontal centre").replace("vcenter", "vertical centre")} to the other items`} onClick={() => alignTo(m)}><AlignGlyph k={m} /></button>
-        ))}
-      </div>
+      {alignRow}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
         <NumF l="X" v={it.x} min={0} on={(n) => up({ x: Math.max(0, n) })} />
         <NumF l="Y" v={it.y} min={0} on={(n) => up({ y: Math.max(0, n) })} />
@@ -676,11 +846,36 @@ function SigInspector({ sel, it, fields, accent, set, patchItem, resetItemStyle,
         </div>
       )}
 
-      {(kind === "text" || kind === "contacts") && (
+      {kind === "text" && (
         <div style={sec}>
-          {textStyleRows}
-          {kind === "text" && link("Link (optional) https://…")}
-          {kind === "contacts" && <p className="hint" style={{ margin: 0 }}>Each contact line keeps its own link — edit the values in the form below.</p>}
+          {textStyleRows(false)}
+          {link("Link (optional) https://…")}
+        </div>
+      )}
+
+      {kind === "row" && (
+        <div style={sec}>
+          <Field label={LABEL[id]}><input ref={first} value={fields[ROW_KEY[id]] || ""} onChange={(e) => set(ROW_KEY[id], e.target.value)} /></Field>
+          {textStyleRows(true)}
+          {link("Link override (optional) — default link is used if empty")}
+        </div>
+      )}
+
+      {kind === "icon" && (
+        <div style={sec}>
+          <Field label={id === "s_wc" ? "WeChat profile link" : "Profile username or link"}>
+            <input ref={first} value={fields[SOC_KEY[id]] || ""} onChange={(e) => set(SOC_KEY[id], e.target.value)} />
+          </Field>
+          {link("Link override (optional) — opens this instead of the profile")}
+          <div style={row}>
+            <NumF l="⇔" title="Icon size" v={it.size ?? (fields.socialIconSize || 28)} min={12} max={64} on={(n) => up({ size: n })} />
+            <div className="seg">
+              {[["icons", "Icon"], ["text", "Text"]].map(([k, l]) => (
+                <button type="button" key={k} className={(fields.iconStyle || "icons") === k ? "on" : ""} onClick={() => set("iconStyle", k)}>{l}</button>
+              ))}
+            </div>
+          </div>
+          {fields.iconStyle === "text" && col("color", accent, "Label colour")}
         </div>
       )}
 
@@ -689,8 +884,8 @@ function SigInspector({ sel, it, fields, accent, set, patchItem, resetItemStyle,
           <Field label="Button link"><input value={fields.ctau || ""} placeholder="https://…" onChange={(e) => set("ctau", e.target.value)} /></Field>
           <div style={row}>
             {fontSel}
-            <NumF l="Aa" title="Font size" v={it.size ?? ""} min={9} max={24} on={(n) => up({ size: n })} />
-            <NumF l="◜" title="Corner radius" v={it.radius ?? ""} min={0} max={30} on={(n) => up({ radius: n })} />
+            <NumF l="Aa" title="Font size" v={it.size} min={9} max={24} on={(n) => up({ size: n })} />
+            <NumF l="◜" title="Corner radius" v={it.radius} min={0} max={30} on={(n) => up({ radius: n })} />
           </div>
           <div style={row}>
             <Tog on={it.bold !== false} title="Bold" onClick={() => up({ bold: it.bold === false ? undefined : false })}><Bold size={14} /></Tog>
@@ -698,18 +893,6 @@ function SigInspector({ sel, it, fields, accent, set, patchItem, resetItemStyle,
           </div>
           {col("bg", accent, "Button colour")}
           {col("color", "#ffffff", "Text colour")}
-        </div>
-      )}
-
-      {kind === "social" && (
-        <div style={sec}>
-          <div className="seg">
-            {[["icons", "Icons"], ["text", "Text only"]].map(([k, l]) => (
-              <button type="button" key={k} className={(fields.iconStyle || "icons") === k ? "on" : ""} onClick={() => set("iconStyle", k)}>{l}</button>
-            ))}
-          </div>
-          <label style={row}><span style={{ fontSize: 12 }}>Icon size</span><input type="range" min="16" max="48" value={fields.socialIconSize || 28} onChange={(e) => set("socialIconSize", Number(e.target.value))} /></label>
-          <p className="hint" style={{ margin: 0 }}>Edit the profile links in the form below.</p>
         </div>
       )}
 
@@ -750,7 +933,7 @@ function SigInspector({ sel, it, fields, accent, set, patchItem, resetItemStyle,
                 <button type="button" key={k} className={(it.fit || "cover") === k ? "on" : ""} onClick={() => up({ fit: k })}>{l}</button>
               ))}
             </div>
-            <NumF l="◜" title="Corner radius" v={it.radius ?? ""} min={0} max={999} on={(n) => up({ radius: n })} />
+            <NumF l="◜" title="Corner radius" v={it.radius} min={0} max={999} on={(n) => up({ radius: n })} />
           </div>
           {link("Link when clicked (optional)")}
         </div>
@@ -759,14 +942,14 @@ function SigInspector({ sel, it, fields, accent, set, patchItem, resetItemStyle,
       {kind === "rect" && (
         <div style={sec}>
           {col("bg", rectBg({}, id, accent), "Fill colour")}
-          <NumF l="◜" title="Corner radius" v={it.radius ?? ""} min={0} max={999} on={(n) => up({ radius: n })} />
+          <NumF l="◜" title="Corner radius" v={it.radius} min={0} max={999} on={(n) => up({ radius: n })} />
         </div>
       )}
 
       <div style={{ ...sec, ...row }}>
-        <button type="button" className="btn" onClick={() => resetItemStyle(id)}><RotateCcw size={14} /> Reset style</button>
-        {!BUILTIN.includes(id) && <button type="button" className="btn" title="Duplicate (Ctrl+D)" onClick={() => dupItem(id)}><Copy size={14} /></button>}
-        <button type="button" className="btn" title={BUILTIN.includes(id) ? "Hide (restore it from the canvas panel)" : "Delete"} onClick={() => removeItem(id)}><Trash2 size={14} /></button>
+        <button type="button" className="btn" onClick={() => resetItemsStyle([id])}><RotateCcw size={14} /> Reset style</button>
+        {!BUILTIN.includes(id) && <button type="button" className="btn" title="Duplicate (Ctrl+D)" onClick={dupSel}><Copy size={14} /></button>}
+        <button type="button" className="btn" title={BUILTIN.includes(id) ? "Hide (bring it back from the canvas panel)" : "Delete"} onClick={() => removeItems([id])}><Trash2 size={14} /></button>
       </div>
     </>
   );
@@ -787,7 +970,7 @@ export default function SignatureBuilder({ initial, onSaved, onCancel }) {
   });
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setFields((f) => ({ ...f, [k]: v }));
-  const [sel, setSel] = useState(null); // selected item on the design canvas
+  const [sel, setSel] = useState([]); // selected items on the design canvas
   const real = { accent: "#2563eb", ...clean(fields) };
   // ---- free layout helpers (fields.layout.items[id] = { x, y, w, h, ...style }) ----
   const tidy = (o) => {
@@ -801,22 +984,25 @@ export default function SignatureBuilder({ initial, onSaved, onCancel }) {
       return { ...f, layout: { ...(f.layout || {}), items } };
     });
   const patchItem = (id, p) => patchItems({ [id]: p });
-  const removeItem = (id) =>
+  const removeItems = (list) =>
     setFields((f) => {
       const items = { ...f.layout.items };
-      if (BUILTIN.includes(id)) items[id] = { ...items[id], hidden: true };
-      else delete items[id];
+      list.forEach((id) => {
+        if (BUILTIN.includes(id)) items[id] = { ...items[id], hidden: true };
+        else delete items[id];
+      });
       return { ...f, layout: { ...f.layout, items } };
     });
   const restoreItem = (id) => patchItem(id, { hidden: undefined });
-  const resetItemStyle = (id) =>
+  const resetItemsStyle = (list) =>
     setFields((f) => {
-      const keep = ["x", "y", "w", "h", "type", "text", "src", "hidden"], cur = f.layout.items[id] || {};
-      const items = { ...f.layout.items, [id]: Object.fromEntries(Object.entries(cur).filter(([k]) => keep.includes(k))) };
+      const items = { ...f.layout.items };
+      list.forEach((id) => (items[id] = Object.fromEntries(Object.entries(items[id] || {}).filter(([k]) => STYLE_KEYS_KEEP.includes(k)))));
       return { ...f, layout: { ...f.layout, items } };
     });
+  const seq = useRef(0);
   const addItem = (it) => {
-    const id = `${it.type[0]}${Date.now().toString(36)}${Math.floor(Math.random() * 99)}`;
+    const id = `${it.type[0]}${Date.now().toString(36)}${seq.current++}`;
     patchItem(id, it);
     return id;
   };
@@ -824,7 +1010,7 @@ export default function SignatureBuilder({ initial, onSaved, onCancel }) {
     const L = seedLayout({ ...real, styles: undefined });
     if (L) {
       setFields((f) => ({ ...f, layout: L, styles: undefined }));
-      setSel(null);
+      setSel([]);
     }
   };
   // first time (or an old signature): build the free layout from the classic one
@@ -832,6 +1018,13 @@ export default function SignatureBuilder({ initial, onSaved, onCancel }) {
     if (fields.layout) return;
     const L = seedLayout(real);
     if (L) setFields((f) => (f.layout ? f : { ...f, layout: L }));
+  }, []);
+  // layouts saved by the previous editor version: split the contacts / social blocks into single items
+  useLayoutEffect(() => {
+    if (fields.layout && fields.layout.v !== 2) {
+      const pts = SIGNATURES[0].build(real, { parts: true }).parts;
+      setFields((f) => (f.layout && f.layout.v !== 2 ? { ...f, layout: migrateLayout(f.layout, pts, f) } : f));
+    }
   }, []);
   // undo / redo of every change in the editor (changes made within 0.6 s count as one step)
   const hist = useRef({ past: [], future: [], last: Date.now(), skip: false, cur: null });
@@ -878,6 +1071,31 @@ export default function SignatureBuilder({ initial, onSaved, onCancel }) {
         <span className="muted small">
           Update the details and preview your email-safe signature as you go.
         </span>
+      </div>
+      <div>
+        <strong>Design your signature</strong>{" "}
+        <span className="muted small">this is the live preview — click, drag, resize and edit directly</span>
+        {fields.layout ? (
+          <SigStage
+            fields={fields}
+            parts={parts}
+            accent={real.accent}
+            sel={sel}
+            setSel={setSel}
+            patchItem={patchItem}
+            patchItems={patchItems}
+            removeItems={removeItems}
+            restoreItem={restoreItem}
+            resetItemsStyle={resetItemsStyle}
+            addItem={addItem}
+            set={set}
+            undo={undo}
+            redo={redo}
+            reseed={reseed}
+          />
+        ) : (
+          <p className="hint">Preparing the editor…</p>
+        )}
       </div>
       <div className="form-grid">
         <Field label="Signature name *">
@@ -1030,38 +1248,14 @@ export default function SignatureBuilder({ initial, onSaved, onCancel }) {
           )
         ))}
       </div>
-      <div>
-        <strong>Design your signature</strong>{" "}
-        <span className="muted small">drag anything to place it · drag the handles to resize · double-click text to type</span>
-        {fields.layout ? (
-          <SigStage
-            fields={fields}
-            parts={parts}
-            accent={real.accent}
-            sel={sel}
-            setSel={setSel}
-            patchItem={patchItem}
-            patchItems={patchItems}
-            removeItem={removeItem}
-            restoreItem={restoreItem}
-            resetItemStyle={resetItemStyle}
-            addItem={addItem}
-            set={set}
-            undo={undo}
-            redo={redo}
-            reseed={reseed}
-          />
-        ) : (
-          <p className="hint">Preparing the editor…</p>
-        )}
-        <strong style={{ display: "block", marginTop: 14 }}>Email result</strong>
-        <span className="muted small">this is what your recipients receive</span>
+      <details>
+        <summary className="muted small" style={{ cursor: "pointer" }}>Show the exact email HTML result</summary>
         <div
           className="sig-preview"
           onClick={(e) => e.preventDefault()}
           dangerouslySetInnerHTML={{ __html: SIGNATURES[0].build(real) }}
         />
-      </div>
+      </details>
       <div className="sig-actions">
         <button
           type="button"

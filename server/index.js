@@ -13,6 +13,8 @@ import * as scheduler from "./scheduler.js";
 import { computeTimes } from "./schedule.js";
 import * as resumes from "./resumes.js";
 import * as inbox from "./inbox.js";
+import * as scraper from "./scraper.js";
+import { browserStatus, getVerifyState, verifyAction } from "./render.js";
 import {
   sendEmail,
   smtpCheck,
@@ -1172,6 +1174,81 @@ app.post(
     );
     await scheduler.reload();
     res.json({ count: rows.length });
+  }),
+);
+
+// ---------- professor finder ----------
+const PROF_STATUS = ["new", "shortlist", "contacted", "skip"];
+app.post(
+  "/api/scrape/discover",
+  wrap(async (req, res) => {
+    const { urls, url, selector, pages, render, assist } = req.body || {};
+    res.json(
+      await scraper.discover(urls ?? url, {
+        selector: String(selector || ""),
+        pages: Number(pages) || 1,
+        render,
+        assist: assist !== false,
+      }),
+    );
+  }),
+);
+app.get(
+  "/api/scrape/capabilities",
+  wrap(async (req, res) => res.json({ browser: await browserStatus() })),
+);
+// While a captcha / login is waiting for you in the browser window, this says which site it is.
+app.get(
+  "/api/scrape/status",
+  wrap(async (req, res) => res.json({ verify: getVerifyState() })),
+);
+app.post(
+  "/api/scrape/verify/:action",
+  wrap(async (req, res) => {
+    if (!["continue", "cancel"].includes(req.params.action)) return res.status(400).json({ error: "Unknown action" });
+    res.json({ ok: verifyAction(req.params.action) });
+  }),
+);
+app.post(
+  "/api/scrape/start",
+  wrap(async (req, res) => res.json(scraper.startJob(req.body || {}))),
+);
+app.get(
+  "/api/scrape/jobs/:id",
+  wrap(async (req, res) => {
+    const job = scraper.getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    res.json(job);
+  }),
+);
+app.post(
+  "/api/scrape/jobs/:id/cancel",
+  wrap(async (req, res) => res.json(scraper.cancelJob(req.params.id) || {})),
+);
+app.get(
+  "/api/professors",
+  wrap(async (req, res) => res.json(await db.list("professors"))),
+);
+app.patch(
+  "/api/professors/:id",
+  wrap(async (req, res) => {
+    const patch = {};
+    if (PROF_STATUS.includes(req.body?.status)) patch.status = req.body.status;
+    if (typeof req.body?.notes === "string")
+      patch.notes = req.body.notes.slice(0, 2000);
+    if (!(await db.get("professors", req.params.id)))
+      return res.status(404).json({ error: "Not found" });
+    if (Object.keys(patch).length)
+      await db.update("professors", req.params.id, patch);
+    res.json({ ok: true });
+  }),
+);
+app.post(
+  "/api/professors/delete",
+  wrap(async (req, res) => {
+    const ids = (req.body?.ids || []).filter((x) => typeof x === "string");
+    await db.removeMany("professors", ids);
+    res.json({ count: ids.length });
   }),
 );
 
